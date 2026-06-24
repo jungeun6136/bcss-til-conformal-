@@ -12,6 +12,7 @@ from modules.keyword_research import NaverKeywordResearch
 from modules.product_scraper import ProductScraper
 from modules.image_downloader import ImageDownloader
 from modules.content_generator import ContentGenerator
+from modules.competitor_researcher import CompetitorResearcher
 from modules.templates import CATEGORIES, POST_TYPES
 
 # ── 페이지 설정 ─────────────────────────────────────
@@ -61,6 +62,7 @@ DEFAULTS = {
     "post_type": "review",
     "product_info": None,
     "sub_keywords": [],
+    "competitors": [],
     "post_content": None,
     "saved_images": [],
     "output_dir": None,
@@ -243,21 +245,19 @@ elif st.session_state.step == 1:
             # ③ 핵심 필드가 비어있으면 Claude가 직접 리서치
             missing_fields = not info.get("price") or not info.get("description") or not info.get("specs")
             if missing_fields:
-                status.markdown("**3/3  🤖 Claude가 제품 정보 보완 중...**")
-                progress.progress(65)
+                status.markdown("**3/4  🤖 Claude가 제품 정보 보완 중...**")
+                progress.progress(55)
                 generator = ContentGenerator(anthropic_key)
                 claude_info = generator.research_product(
                     st.session_state.keyword,
                     st.session_state.brand_url,
                     CATEGORIES.get(st.session_state.category, st.session_state.category),
                 )
-                # Claude 결과로 빈 필드만 채우기
                 for field in ["price", "description", "rating", "review_count"]:
                     if not info.get(field) and claude_info.get(field):
                         info[field] = claude_info[field]
                 if not info.get("specs") and claude_info.get("specs"):
                     info["specs"] = claude_info["specs"]
-                # pros/cons도 저장
                 if claude_info.get("pros"):
                     info["pros"] = claude_info["pros"]
                 if claude_info.get("cons"):
@@ -266,6 +266,22 @@ elif st.session_state.step == 1:
                     info["key_features"] = claude_info["key_features"]
 
             st.session_state.product_info = info
+
+            # ④ 비교형 글일 때: 실제 경쟁 제품 자동 수집
+            if st.session_state.post_type == "compare":
+                status.markdown("**4/4  ⚔️ 실제 경쟁 제품 조사 중...**")
+                progress.progress(75)
+                naver_client_id     = os.getenv("NAVER_CLIENT_ID", "")
+                naver_client_secret = os.getenv("NAVER_CLIENT_SECRET", "")
+                comp_researcher = CompetitorResearcher(anthropic_key, naver_client_id, naver_client_secret)
+                competitors = comp_researcher.research(
+                    product_name=info.get("name", st.session_state.keyword),
+                    category=CATEGORIES.get(st.session_state.category, st.session_state.category),
+                    price=info.get("price", ""),
+                    keyword=st.session_state.keyword,
+                )
+                st.session_state.competitors = competitors
+
             progress.progress(100)
             status.markdown("✅ **수집 완료! 아래 내용을 확인하고 수정하세요.**")
 
@@ -331,6 +347,36 @@ elif st.session_state.step == 1:
                         st.markdown(f"- ⚠️ {c}")
             st.caption("위 내용은 Claude의 지식 기반 리서치 결과입니다. 실제와 다를 수 있으니 확인 후 사용하세요.")
 
+        # 비교형 글일 때: 경쟁 제품 표시
+        if st.session_state.post_type == "compare" and st.session_state.competitors:
+            st.markdown("---")
+            st.markdown("#### ⚔️ 수집된 경쟁 제품")
+            st.caption("아래 경쟁 제품들과의 실제 스펙 비교를 바탕으로 글이 작성됩니다.")
+            for i, comp in enumerate(st.session_state.competitors, 1):
+                with st.expander(f"경쟁 제품 {i}: {comp.get('name', '미확인')}  |  가격: {comp.get('price', '미확인')}원"):
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        if comp.get("image"):
+                            try:
+                                st.image(comp["image"], width=160)
+                            except Exception:
+                                pass
+                        if comp.get("pros"):
+                            st.markdown("**장점**")
+                            for p in comp["pros"]:
+                                st.markdown(f"- {p}")
+                    with c2:
+                        if comp.get("specs"):
+                            st.markdown("**스펙**")
+                            for k, v in list(comp["specs"].items())[:6]:
+                                st.markdown(f"- {k}: {v}")
+                        if comp.get("cons"):
+                            st.markdown("**약점**")
+                            for c in comp["cons"]:
+                                st.markdown(f"- {c}")
+        elif st.session_state.post_type == "compare" and not st.session_state.competitors:
+            st.info("경쟁 제품 수집 결과가 없습니다. 글 작성은 계속 진행할 수 있습니다.")
+
         # 연관 키워드 미리보기
         if st.session_state.sub_keywords:
             st.markdown("**🔑 글에 포함될 서브키워드**")
@@ -389,16 +435,28 @@ elif st.session_state.step == 2:
         st.session_state.output_dir   = str(output_dir)
         progress.progress(45)
 
-        # 글 생성
+        # 글 생성 (비교형이면 경쟁 제품 데이터 주입)
         status.markdown("**✍️ Claude가 블로그 글을 작성 중입니다... (30초~1분 소요)**")
         progress.progress(50)
         generator = ContentGenerator(anthropic_key)
+
+        # 비교형: 경쟁 제품 비교 요약 텍스트 생성 후 product_info에 주입
+        product_info_for_gen = dict(st.session_state.product_info)
+        if st.session_state.post_type == "compare" and st.session_state.competitors:
+            from modules.competitor_researcher import CompetitorResearcher
+            comp_researcher = CompetitorResearcher(anthropic_key)
+            comparison_summary = comp_researcher.build_comparison_summary(
+                product_info_for_gen,
+                st.session_state.competitors,
+            )
+            product_info_for_gen["comparison_data"] = comparison_summary
+
         post = generator.generate_blog_post(
             category=st.session_state.category,
             post_type=st.session_state.post_type,
             keyword=st.session_state.keyword,
             sub_keywords=st.session_state.sub_keywords,
-            product_info=st.session_state.product_info,
+            product_info=product_info_for_gen,
             brand_connect_url=st.session_state.brand_url,
         )
         st.session_state.post_content = post

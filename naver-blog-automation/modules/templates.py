@@ -133,6 +133,18 @@ def get_user_prompt(
 
     category_tone = CATEGORY_TONE.get(category, "")
 
+    # 경쟁 제품 비교 데이터 (비교형 글에만 포함)
+    comparison_block = ""
+    if product_info.get("comparison_data"):
+        comparison_block = f"""
+[실제 경쟁 제품 비교 데이터 - 반드시 이 데이터를 활용하세요]
+{product_info["comparison_data"]}
+
+→ 위 실제 데이터를 바탕으로 마크다운 비교표(|항목|메인제품|경쟁제품1|경쟁제품2|)를 반드시 포함하세요.
+→ 비교 결과에서 메인 제품이 우위인 항목을 명확히 부각하되, 경쟁 제품이 나은 항목도 솔직하게 인정하세요.
+→ "이런 분에게는 메인 제품, 저런 분에게는 경쟁 제품" 형식의 명확한 결론을 내려주세요.
+"""
+
     return f"""
 [작성 요청]
 메인 키워드: {keyword}
@@ -161,6 +173,7 @@ def get_user_prompt(
 단점/주의사항:
 {cons_text if cons_text else "  - 리서치 결과 없음 (일반적인 주의사항으로 작성)"}
 
+{comparison_block}
 [구매 링크]
 {brand_connect_url}
 → 글 중간 자연스러운 위치 1회 + 마무리 1회 삽입
