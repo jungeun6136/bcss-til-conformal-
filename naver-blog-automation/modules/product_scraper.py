@@ -1,9 +1,8 @@
 import requests
 import re
 from bs4 import BeautifulSoup
-from typing import Dict, List
+from typing import Dict, Optional
 from urllib.parse import urlparse, quote
-
 
 HEADERS = {
     "User-Agent": (
@@ -12,201 +11,124 @@ HEADERS = {
         "Chrome/120.0.0.0 Safari/537.36"
     ),
     "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 }
 
-# 설명에서 걸러낼 광고/네비게이션 키워드
 NOISE_PATTERNS = [
-    "로그인", "회원가입", "장바구니", "배송비", "적립금", "쿠폰",
-    "KT", "SKT", "LG유플러스", "인터넷", "TV 결합", "당일개통",
-    "이벤트", "혜택", "shop.kt", "naver.com", "copyright",
-    "고객센터", "서비스 이용약관", "개인정보",
+    "로그인", "회원가입", "장바구니", "비정상적인 접근", "접속을 일시적",
+    "KT", "SKT", "LG유플러스", "인터넷TV", "당일개통", "shop.kt",
+    "copyright", "고객센터", "서비스 이용약관", "개인정보처리방침",
 ]
 
 
 def _is_noise(text: str) -> bool:
-    if len(text) < 15 or len(text) > 400:
+    if not text or len(text) < 10 or len(text) > 500:
         return True
     return any(kw in text for kw in NOISE_PATTERNS)
 
 
 class ProductScraper:
-    def __init__(self):
+    def __init__(self, naver_client_id: str = "", naver_client_secret: str = ""):
         self.session = requests.Session()
         self.session.headers.update(HEADERS)
+        self.naver_client_id = naver_client_id
+        self.naver_client_secret = naver_client_secret
 
     def research_product(self, url: str, keyword: str) -> Dict:
-        """
-        Brand Connect URL + 키워드로 제품 정보 수집.
-        네이버 쇼핑 검색을 메인으로, URL 스크래핑을 보조로 사용.
-        """
         result = self._empty_product(keyword)
 
-        # 1차: 네이버 쇼핑에서 검색 (가장 신뢰도 높음)
-        naver_info = self._search_naver_shopping(keyword)
-        self._merge(result, naver_info)
+        # 1순위: 네이버 공식 쇼핑 검색 API
+        if self.naver_client_id and self.naver_client_secret:
+            api_info = self._naver_shopping_api(keyword)
+            if api_info.get("name") or api_info.get("price"):
+                self._merge(result, api_info)
 
-        # 2차: URL에서 추가 정보 수집
+        # 2순위: URL 스크래핑 (가격/스펙 보완)
         url_info = self._scrape_from_url(url)
         self._merge(result, url_info)
 
-        # 3차: 스펙 정보가 부족하면 "{키워드} 스펙" 추가 검색
-        if len(result.get("specs", {})) < 3:
-            spec_info = self._search_naver_shopping(f"{keyword} 스펙 성능")
-            if spec_info.get("specs"):
-                result["specs"].update(spec_info["specs"])
-
         # 설명 정제
         result["description"] = self._clean_description(result.get("description", ""))
-
         return result
 
-    # ── 네이버 쇼핑 검색 (핵심) ────────────────────────
-    def _search_naver_shopping(self, query: str) -> Dict:
-        """search.shopping.naver.com 에서 제품 정보 수집"""
+    # ── 네이버 공식 쇼핑 API ─────────────────────────
+    def _naver_shopping_api(self, query: str) -> Dict:
         try:
-            url = f"https://search.shopping.naver.com/search/all?query={quote(query)}"
-            resp = self.session.get(url, timeout=12)
-            soup = BeautifulSoup(resp.text, "lxml")
-
-            # ── 제품명 ──
-            name_el = soup.select_one(
-                "div.basicList_title__xCSyB, "
-                "strong.basicList_name__WqGRC, "
-                "a[class*='basicList_link']"
+            resp = requests.get(
+                "https://openapi.naver.com/v1/search/shop.json",
+                headers={
+                    "X-Naver-Client-Id": self.naver_client_id,
+                    "X-Naver-Client-Secret": self.naver_client_secret,
+                },
+                params={"query": query, "display": 5, "sort": "sim"},
+                timeout=10,
             )
-            name = name_el.get_text(strip=True) if name_el else ""
+            items = resp.json().get("items", [])
+            if not items:
+                return self._empty_product(query)
 
-            # ── 가격 (최저가) ──
-            price_el = soup.select_one(
-                "span.basicList_price_sell__UuHRB strong, "
-                "strong[class*='price_num'], "
-                "em[class*='price']"
-            )
-            price = re.sub(r"[^\d,]", "", price_el.get_text()) if price_el else ""
+            item = items[0]
+            # 상위 5개 최저가 평균 계산
+            prices = []
+            for it in items:
+                p = re.sub(r"[^\d]", "", it.get("lprice", ""))
+                if p and int(p) > 1000:
+                    prices.append(int(p))
+            avg_price = f"{sum(prices) // len(prices):,}" if prices else re.sub(r"[^\d,]", "", item.get("lprice", ""))
 
-            # 가격 범위 여러 개 수집해서 평균 계산
-            price_els = soup.select("span.basicList_price_sell__UuHRB strong")[:5]
-            if price_els:
-                prices = []
-                for pe in price_els:
-                    p = re.sub(r"[^\d]", "", pe.get_text())
-                    if p.isdigit() and int(p) > 1000:
-                        prices.append(int(p))
-                if prices:
-                    avg_price = sum(prices) // len(prices)
-                    price = f"{avg_price:,}"
-
-            # ── 평점 ──
-            rating_el = soup.select_one(
-                "span[class*='starScore'], "
-                "em[class*='rating'], "
-                "span[class*='grade_num']"
-            )
-            rating = rating_el.get_text(strip=True) if rating_el else ""
-            rating = re.sub(r"[^\d.]", "", rating)
-
-            # ── 리뷰 수 ──
-            review_el = soup.select_one(
-                "span[class*='reviewCount'], "
-                "em[class*='review'], "
-                "a[class*='review']"
-            )
-            review_count = ""
-            if review_el:
-                review_count = re.sub(r"[^\d,]", "", review_el.get_text())
-
-            # ── 제품 설명 ──
-            desc_candidates = []
-            for el in soup.select(
-                "div.basicList_detail_box__OoXKt p, "
-                "div[class*='desc'], "
-                "p[class*='detail']"
-            )[:8]:
-                t = el.get_text(strip=True)
-                if not _is_noise(t):
-                    desc_candidates.append(t)
-            description = " ".join(desc_candidates[:3])
-
-            # ── 스펙 ──
-            specs = {}
-            for row in soup.select("dl[class*='spec'] dt, table tr")[:12]:
-                cells = row.select("th, td, dt, dd")
-                if len(cells) >= 2:
-                    k = cells[0].get_text(strip=True)
-                    v = cells[1].get_text(strip=True)
-                    if k and v and len(k) < 25 and not _is_noise(k):
-                        specs[k] = v
-
-            # ── 이미지 ──
-            images = []
-            for img in soup.select("img[class*='basicList_thumb'], img[class*='product']"):
-                src = img.get("src") or img.get("data-src") or ""
-                if src.startswith("http") and "pstatic" in src:
-                    images.append(src)
+            name = re.sub(r"<[^>]+>", "", item.get("title", ""))  # HTML 태그 제거
 
             return {
                 "name": name,
-                "price": price,
-                "description": description,
-                "specs": specs,
-                "images": images[:8],
-                "rating": rating,
-                "review_count": review_count,
-                "source_url": url,
+                "price": avg_price,
+                "description": item.get("category3", "") + " " + item.get("category4", ""),
+                "specs": {
+                    "브랜드": item.get("brand", ""),
+                    "제조사": item.get("maker", ""),
+                    "카테고리": item.get("category1", ""),
+                },
+                "images": [item.get("image", "")],
+                "rating": "",
+                "review_count": "",
+                "source_url": item.get("link", ""),
             }
         except Exception as e:
-            print(f"[쇼핑 검색 실패] {e}")
-            return self._empty_product("")
+            print(f"[네이버 쇼핑 API 실패] {e}")
+            return self._empty_product(query)
 
-    # ── URL 스크래핑 (보조) ─────────────────────────
+    # ── URL 스크래핑 ─────────────────────────────────
     def _scrape_from_url(self, url: str) -> Dict:
         try:
             final_url = self._follow_redirects(url)
             domain = urlparse(final_url).netloc
             if "smartstore.naver.com" in domain or "brand.naver.com" in domain:
-                return self._scrape_naver_smartstore(final_url)
+                return self._scrape_smartstore(final_url)
             elif "coupang.com" in domain:
                 return self._scrape_coupang(final_url)
             else:
-                return self._scrape_og_tags(final_url)
+                return self._scrape_og(final_url)
         except Exception:
             return self._empty_product("")
 
     def _follow_redirects(self, url: str) -> str:
         try:
-            resp = self.session.head(url, allow_redirects=True, timeout=10)
+            resp = self.session.head(url, allow_redirects=True, timeout=8)
             return resp.url
         except Exception:
             return url
 
-    def _scrape_naver_smartstore(self, url: str) -> Dict:
+    def _scrape_smartstore(self, url: str) -> Dict:
         try:
             resp = self.session.get(url, timeout=10)
             soup = BeautifulSoup(resp.text, "lxml")
-            name = self._text(soup.select_one(
-                "h3.se_textarea, ._1eddO7u4UC, [class*='productTitle'], h1"
-            ))
-            price = re.sub(r"[^\d,]", "", self._text(
-                soup.select_one("[class*='price'], strong.price")
-            ))
+            name  = self._text(soup.select_one("h3.se_textarea, [class*='productTitle'], h1"))
+            price = re.sub(r"[^\d,]", "", self._text(soup.select_one("[class*='price'], strong.price")))
             specs = self._extract_spec_table(soup)
-            images = [
-                img.get("src") or img.get("data-src", "")
-                for img in soup.select("img")
-                if (img.get("src") or img.get("data-src", "")).startswith("http")
-                and "pstatic" in (img.get("src") or img.get("data-src", ""))
-            ]
-            desc_tags = soup.select("[class*='description'], [class*='detail']")
-            desc = " ".join(
-                t.get_text(strip=True) for t in desc_tags[:4]
-                if not _is_noise(t.get_text(strip=True))
-            )
-            return {
-                "name": name, "price": price, "description": desc,
-                "specs": specs, "images": images[:8],
-                "rating": "", "review_count": "", "source_url": url,
-            }
+            images = [img.get("src","") for img in soup.select("img")
+                      if "pstatic" in img.get("src","")]
+            desc_tags = [t.get_text(strip=True) for t in soup.select("[class*='description'] p")
+                         if not _is_noise(t.get_text(strip=True))]
+            return {"name": name, "price": price, "description": " ".join(desc_tags[:3]),
+                    "specs": specs, "images": images[:6], "rating": "", "review_count": "", "source_url": url}
         except Exception:
             return self._empty_product("")
 
@@ -214,46 +136,31 @@ class ProductScraper:
         try:
             resp = self.session.get(url, timeout=10)
             soup = BeautifulSoup(resp.text, "lxml")
-            name = self._text(soup.select_one(
-                "h2.prod-buy-header__title, [class*='product-title']"
-            ))
-            price = re.sub(r"[^\d,]", "", self._text(
-                soup.select_one("[class*='total-price'], strong.final-price")
-            ))
+            name  = self._text(soup.select_one("h2.prod-buy-header__title, [class*='product-title']"))
+            price = re.sub(r"[^\d,]", "", self._text(soup.select_one("[class*='total-price']")))
             specs = self._extract_spec_table(soup)
-            images = [
-                img.get("src", "")
-                for img in soup.select("[class*='prod-image'] img")
-                if img.get("src", "").startswith("http")
-            ]
-            return {
-                "name": name, "price": price, "description": "",
-                "specs": specs, "images": images[:8],
-                "rating": self._text(soup.select_one("[class*='rating-star']")),
-                "review_count": self._text(soup.select_one("[class*='count-rvw']")),
-                "source_url": url,
-            }
+            images = [img.get("src","") for img in soup.select("[class*='prod-image'] img")
+                      if img.get("src","").startswith("http")]
+            return {"name": name, "price": price, "description": "",
+                    "specs": specs, "images": images[:6],
+                    "rating": self._text(soup.select_one("[class*='rating-star']")),
+                    "review_count": self._text(soup.select_one("[class*='count-rvw']")),
+                    "source_url": url}
         except Exception:
             return self._empty_product("")
 
-    def _scrape_og_tags(self, url: str) -> Dict:
+    def _scrape_og(self, url: str) -> Dict:
         try:
             resp = self.session.get(url, timeout=10)
             soup = BeautifulSoup(resp.text, "lxml")
-            og_title = soup.find("meta", property="og:title")
-            og_desc  = soup.find("meta", property="og:description")
-            og_image = soup.find("meta", property="og:image")
-            name  = og_title["content"] if og_title else ""
-            desc  = og_desc["content"]  if og_desc  else ""
-            imgs  = [og_image["content"]] if og_image and og_image.get("content") else []
-            specs = self._extract_spec_table(soup)
+            name = (soup.find("meta", property="og:title") or {}).get("content", "")
+            desc = (soup.find("meta", property="og:description") or {}).get("content", "")
+            img  = (soup.find("meta", property="og:image") or {}).get("content", "")
             if _is_noise(desc):
                 desc = ""
-            return {
-                "name": name, "price": "", "description": desc[:400],
-                "specs": specs, "images": imgs,
-                "rating": "", "review_count": "", "source_url": url,
-            }
+            return {"name": name, "price": "", "description": desc[:400],
+                    "specs": self._extract_spec_table(soup),
+                    "images": [img] if img else [], "rating": "", "review_count": "", "source_url": url}
         except Exception:
             return self._empty_product("")
 
@@ -263,48 +170,38 @@ class ProductScraper:
         for row in soup.select("table tr")[:15]:
             cells = row.select("th, td")
             if len(cells) >= 2:
-                k = cells[0].get_text(strip=True)
-                v = cells[1].get_text(strip=True)
+                k, v = cells[0].get_text(strip=True), cells[1].get_text(strip=True)
                 if k and v and len(k) < 25 and not _is_noise(k):
                     specs[k] = v
-        for dt, dd in zip(soup.select("dt")[:10], soup.select("dd")[:10]):
-            k = dt.get_text(strip=True)
-            v = dd.get_text(strip=True)
-            if k and v and len(k) < 25 and not _is_noise(k):
-                specs[k] = v
         return specs
 
     def _clean_description(self, text: str) -> str:
-        """광고/네비게이션 노이즈 제거 후 깨끗한 설명 반환"""
         if not text:
             return ""
-        sentences = re.split(r"[.!?]\s*", text)
+        sentences = re.split(r"[.!?]\s+", text)
         clean = [s.strip() for s in sentences if s.strip() and not _is_noise(s.strip())]
         return ". ".join(clean[:5])
 
     def _merge(self, base: Dict, new: Dict):
-        for field in ["name", "price", "description", "rating", "review_count", "source_url"]:
-            if not base.get(field) and new.get(field):
-                base[field] = new[field]
+        for f in ["name", "price", "description", "rating", "review_count", "source_url"]:
+            if not base.get(f) and new.get(f):
+                base[f] = new[f]
         if not base.get("specs"):
             base["specs"] = new.get("specs", {})
-        elif new.get("specs"):
-            for k, v in new["specs"].items():
-                if k not in base["specs"]:
+        else:
+            for k, v in new.get("specs", {}).items():
+                if k not in base["specs"] and v:
                     base["specs"][k] = v
         existing = set(base.get("images", []))
         for img in new.get("images", []):
-            if img not in existing:
+            if img and img not in existing:
                 base.setdefault("images", []).append(img)
                 existing.add(img)
-        base["images"] = base.get("images", [])[:10]
+        base["images"] = [i for i in base.get("images", []) if i][:10]
 
     def _text(self, el) -> str:
         return el.get_text(strip=True) if el else ""
 
     def _empty_product(self, name: str) -> Dict:
-        return {
-            "name": name, "price": "", "specs": {},
-            "description": "", "images": [],
-            "rating": "", "review_count": "", "source_url": "",
-        }
+        return {"name": name, "price": "", "specs": {}, "description": "",
+                "images": [], "rating": "", "review_count": "", "source_url": ""}

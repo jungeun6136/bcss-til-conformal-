@@ -223,21 +223,51 @@ elif st.session_state.step == 1:
         status   = st.empty()
 
         try:
-            status.markdown("**키워드 연관 검색어 수집 중...**")
-            progress.progress(15)
+            # ① 키워드 수집
+            status.markdown("**1/3  🔍 연관 키워드 수집 중...**")
+            progress.progress(10)
             researcher = NaverKeywordResearch(naver_key, naver_secret, naver_customer)
             raw_kws = researcher.get_related_keywords(st.session_state.keyword, top_n=30)
             st.session_state.sub_keywords = researcher.select_sub_keywords(raw_kws, count=8)
 
-            status.markdown("**제품 URL 분석 및 상품 정보 수집 중...**")
-            progress.progress(40)
-            scraper = ProductScraper()
+            # ② URL + 네이버 쇼핑 API 스크래핑
+            status.markdown("**2/3  🛍️ 제품 정보 수집 중...**")
+            progress.progress(35)
+            naver_client_id     = os.getenv("NAVER_CLIENT_ID", "")
+            naver_client_secret = os.getenv("NAVER_CLIENT_SECRET", "")
+            scraper = ProductScraper(naver_client_id, naver_client_secret)
             info = scraper.research_product(
                 st.session_state.brand_url, st.session_state.keyword
             )
+
+            # ③ 핵심 필드가 비어있으면 Claude가 직접 리서치
+            missing_fields = not info.get("price") or not info.get("description") or not info.get("specs")
+            if missing_fields:
+                status.markdown("**3/3  🤖 Claude가 제품 정보 보완 중...**")
+                progress.progress(65)
+                generator = ContentGenerator(anthropic_key)
+                claude_info = generator.research_product(
+                    st.session_state.keyword,
+                    st.session_state.brand_url,
+                    CATEGORIES.get(st.session_state.category, st.session_state.category),
+                )
+                # Claude 결과로 빈 필드만 채우기
+                for field in ["price", "description", "rating", "review_count"]:
+                    if not info.get(field) and claude_info.get(field):
+                        info[field] = claude_info[field]
+                if not info.get("specs") and claude_info.get("specs"):
+                    info["specs"] = claude_info["specs"]
+                # pros/cons도 저장
+                if claude_info.get("pros"):
+                    info["pros"] = claude_info["pros"]
+                if claude_info.get("cons"):
+                    info["cons"] = claude_info["cons"]
+                if claude_info.get("key_features"):
+                    info["key_features"] = claude_info["key_features"]
+
             st.session_state.product_info = info
             progress.progress(100)
-            status.markdown("✅ **수집 완료! 아래 내용을 확인해주세요.**")
+            status.markdown("✅ **수집 완료! 아래 내용을 확인하고 수정하세요.**")
 
         except Exception as e:
             st.session_state.step = -1
@@ -277,6 +307,29 @@ elif st.session_state.step == 1:
             height=140,
             placeholder="무게: 1.2kg\n색상: 블랙\n용량: 5.5L",
         )
+
+        # Claude 리서치 결과 (장단점/특징)
+        pros = info.get("pros", [])
+        cons = info.get("cons", [])
+        features = info.get("key_features", [])
+        if pros or cons or features:
+            st.markdown("**🤖 Claude 리서치 결과**")
+            c_a, c_b = st.columns(2)
+            with c_a:
+                if features:
+                    st.markdown("**주요 특징**")
+                    for f in features:
+                        st.markdown(f"- {f}")
+                if pros:
+                    st.markdown("**장점**")
+                    for p in pros:
+                        st.markdown(f"- ✅ {p}")
+            with c_b:
+                if cons:
+                    st.markdown("**주의사항 / 단점**")
+                    for c in cons:
+                        st.markdown(f"- ⚠️ {c}")
+            st.caption("위 내용은 Claude의 지식 기반 리서치 결과입니다. 실제와 다를 수 있으니 확인 후 사용하세요.")
 
         # 연관 키워드 미리보기
         if st.session_state.sub_keywords:
