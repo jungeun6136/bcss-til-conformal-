@@ -306,7 +306,7 @@ elif st.session_state.step == 1:
         col1, col2 = st.columns(2)
         with col1:
             new_name = st.text_input("제품명", value=info.get("name", ""))
-            new_price = st.text_input("가격 (숫자만)", value=info.get("price", ""),
+            new_price = st.text_input("최저가 (원)", value=info.get("price", ""),
                                       placeholder="예) 89,000")
             new_rating = st.text_input("평점", value=info.get("rating", ""),
                                        placeholder="예) 4.7")
@@ -317,6 +317,22 @@ elif st.session_state.step == 1:
                                     value=info.get("description", ""),
                                     height=160,
                                     placeholder="제품의 주요 특징, 용도, 장점 등을 입력하세요.")
+
+        # 프로모션/할인 정보
+        promotions = info.get("promotions", {})
+        if promotions:
+            st.markdown("**🏷️ 할인/프로모션 정보**")
+            promo_cols = st.columns(len(promotions))
+            for col, (k, v) in zip(promo_cols, promotions.items()):
+                with col:
+                    st.markdown(
+                        f'<div style="background:#fff8e1;border:1px solid #ffe082;border-radius:8px;'
+                        f'padding:8px 12px;text-align:center;">'
+                        f'<div style="font-size:0.75rem;color:#f57f17;">{k}</div>'
+                        f'<div style="font-size:1rem;font-weight:700;color:#e65100;">{v}</div>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
 
         st.markdown("**스펙 정보**")
         specs = info.get("specs", {})
@@ -356,31 +372,38 @@ elif st.session_state.step == 1:
 
         # 비교형 글일 때: 경쟁 제품 표시
         if st.session_state.post_type == "compare" and st.session_state.competitors:
-            st.markdown("---")
+            st.divider()
             st.markdown("#### ⚔️ 수집된 경쟁 제품")
             st.caption("아래 경쟁 제품들과의 실제 스펙 비교를 바탕으로 글이 작성됩니다.")
             for i, comp in enumerate(st.session_state.competitors, 1):
-                with st.expander(f"경쟁 제품 {i}: {comp.get('name', '미확인')}  |  가격: {comp.get('price', '미확인')}원"):
+                price_label = f"{comp.get('price', '미확인')}원" if comp.get("price") else "가격 미확인"
+                review_label = f" · 리뷰 {comp.get('review_count')}개" if comp.get("review_count") else ""
+                with st.expander(f"경쟁 제품 {i}: {comp.get('name', '미확인')}  |  최저가: {price_label}{review_label}"):
                     c1, c2 = st.columns(2)
                     with c1:
-                        if comp.get("image"):
+                        img_src = comp.get("image") or (comp.get("images", [None])[0] if comp.get("images") else None)
+                        if img_src:
                             try:
-                                st.image(comp["image"], width=160)
+                                st.image(img_src, width=160)
                             except Exception:
                                 pass
+                        if comp.get("key_features"):
+                            st.markdown("**주요 특징**")
+                            for f in comp["key_features"][:3]:
+                                st.markdown(f"- {f}")
                         if comp.get("pros"):
                             st.markdown("**장점**")
                             for p in comp["pros"]:
-                                st.markdown(f"- {p}")
+                                st.markdown(f"- ✅ {p}")
                     with c2:
                         if comp.get("specs"):
                             st.markdown("**스펙**")
-                            for k, v in list(comp["specs"].items())[:6]:
-                                st.markdown(f"- {k}: {v}")
+                            for k, v in list(comp["specs"].items())[:8]:
+                                st.markdown(f"- **{k}**: {v}")
                         if comp.get("cons"):
                             st.markdown("**약점**")
                             for c in comp["cons"]:
-                                st.markdown(f"- {c}")
+                                st.markdown(f"- ⚠️ {c}")
         elif st.session_state.post_type == "compare" and not st.session_state.competitors:
             st.info("경쟁 제품 수집 결과가 없습니다. 글 작성은 계속 진행할 수 있습니다.")
 

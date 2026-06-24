@@ -147,6 +147,15 @@ def get_user_prompt(
     price = product_info.get("price", "")
     price_text = f"{price}원" if price else "가격 정보 없음"
 
+    # 프로모션/할인 정보
+    promotions = product_info.get("promotions", {})
+    promo_lines = ""
+    if promotions:
+        promo_items = []
+        for k, v in promotions.items():
+            promo_items.append(f"  - {k}: {v}")
+        promo_lines = "\n할인/프로모션:\n" + "\n".join(promo_items)
+
     category_tone = CATEGORY_TONE.get(category, "")
 
     # 경쟁 제품 비교 데이터 (비교형 글에만 포함)
@@ -174,7 +183,7 @@ def get_user_prompt(
 
 [제품 정보]
 제품명: {product_info.get("name", keyword)}
-가격: {price_text}
+최저가: {price_text}{promo_lines}
 평점: {product_info.get("rating", "정보 없음")}
 리뷰 수: {product_info.get("review_count", "정보 없음")}
 주요 특징: {features_text if features_text else "정보 없음"}
