@@ -6,13 +6,22 @@ from typing import List
 from urllib.parse import urlparse
 
 
-HEADERS = {
+BASE_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
+        "Chrome/124.0.0.0 Safari/537.36"
     ),
-    "Referer": "https://www.naver.com/",
+    "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+    "Accept-Language": "ko-KR,ko;q=0.9",
+}
+
+REFERER_MAP = {
+    "pstatic.net":       "https://search.shopping.naver.com/",
+    "shopping.naver":    "https://search.shopping.naver.com/",
+    "smartstore.naver":  "https://smartstore.naver.com/",
+    "brand.naver":       "https://brand.naver.com/",
+    "coupang.com":       "https://www.coupang.com/",
 }
 
 
@@ -39,9 +48,16 @@ class ImageDownloader:
 
         return saved_paths
 
+    def _get_referer(self, url: str) -> str:
+        for domain, referer in REFERER_MAP.items():
+            if domain in url:
+                return referer
+        return "https://www.naver.com/"
+
     def _download_single(self, url: str, save_path: Path) -> bool:
         try:
-            resp = requests.get(url, headers=HEADERS, timeout=15, stream=True)
+            headers = {**BASE_HEADERS, "Referer": self._get_referer(url)}
+            resp = requests.get(url, headers=headers, timeout=15, stream=True)
             resp.raise_for_status()
 
             content_type = resp.headers.get("Content-Type", "")

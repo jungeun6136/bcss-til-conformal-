@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import os
 import sys
 from pathlib import Path
@@ -13,6 +14,7 @@ from modules.product_scraper import ProductScraper
 from modules.image_downloader import ImageDownloader
 from modules.content_generator import ContentGenerator
 from modules.competitor_researcher import CompetitorResearcher
+from modules.html_formatter import to_naver_html
 from modules.templates import CATEGORIES, POST_TYPES
 
 # ── 페이지 설정 ─────────────────────────────────────
@@ -25,12 +27,12 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-    .main-title { font-size:1.9rem; font-weight:800; color:#03C75A; }
-    .sub-title  { font-size:0.95rem; color:#888; margin-bottom:1.5rem; }
-    .step-bar   { display:flex; align-items:center; gap:8px; margin-bottom:1.5rem; }
-    .step-dot   { width:28px; height:28px; border-radius:50%; background:#e0e0e0;
+    .main-title { font-size:1.7rem; font-weight:800; color:#03C75A; margin:0 0 2px; }
+    .sub-title  { font-size:0.88rem; color:#888; margin:0 0 8px; }
+    .step-bar   { display:flex; align-items:center; gap:8px; margin:8px 0; }
+    .step-dot   { width:26px; height:26px; border-radius:50%; background:#e0e0e0;
                   color:#999; display:flex; align-items:center; justify-content:center;
-                  font-weight:700; font-size:0.8rem; }
+                  font-weight:700; font-size:0.78rem; flex-shrink:0; }
     .step-dot.active  { background:#03C75A; color:white; }
     .step-dot.done    { background:#b2dfdb; color:#00796b; }
     .step-line  { flex:1; height:2px; background:#e0e0e0; }
@@ -39,16 +41,21 @@ st.markdown("""
                   color:#03C75A; padding:3px 12px; border-radius:20px;
                   margin:3px; font-size:0.82rem; }
     .post-box   { background:#fafafa; border:1px solid #e0e0e0; border-radius:10px;
-                  padding:1.5rem; white-space:pre-wrap; font-size:0.93rem;
-                  line-height:1.85; max-height:620px; overflow-y:auto; }
+                  padding:1.2rem; white-space:pre-wrap; font-size:0.92rem;
+                  line-height:1.8; max-height:580px; overflow-y:auto; }
     .stat-card  { background:white; border:1px solid #eee; border-radius:10px;
-                  padding:1rem; text-align:center; }
-    .stat-num   { font-size:1.7rem; font-weight:800; color:#03C75A; }
-    .stat-lbl   { font-size:0.78rem; color:#888; }
+                  padding:0.75rem; text-align:center; }
+    .stat-num   { font-size:1.5rem; font-weight:800; color:#03C75A; }
+    .stat-lbl   { font-size:0.75rem; color:#888; }
     .info-block { background:#f8f8f8; border-left:4px solid #03C75A;
-                  padding:0.8rem 1rem; border-radius:4px; margin:0.5rem 0; }
+                  padding:0.6rem 0.8rem; border-radius:4px; margin:4px 0; }
     .err-box    { background:#fff3f3; border:1px solid #ffcdd2; border-radius:10px;
-                  padding:1.5rem; text-align:center; }
+                  padding:1.2rem; text-align:center; }
+    /* 전역 여백 축소 */
+    .block-container { padding-top:1rem !important; padding-bottom:1rem !important; }
+    section[data-testid="stSidebar"] .block-container { padding-top:0.5rem !important; }
+    div[data-testid="stVerticalBlock"] > div { gap:0.3rem; }
+    hr { margin:0.5rem 0 !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -64,6 +71,7 @@ DEFAULTS = {
     "sub_keywords": [],
     "competitors": [],
     "post_content": None,
+    "post_html": None,
     "saved_images": [],
     "output_dir": None,
     "error_msg": "",
@@ -174,8 +182,7 @@ with st.sidebar:
 
 # ── 메인 영역 ─────────────────────────────────────────
 st.markdown('<div class="main-title">✍️ 네이버 블로그 자동화</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-title">Brand Connect URL + 키워드 → 완성된 블로그 글 + 이미지 자동 생성</div>',
-            unsafe_allow_html=True)
+st.markdown('<div class="sub-title">Brand Connect URL + 키워드 → 완성된 블로그 글 + 이미지 자동 생성</div>', unsafe_allow_html=True)
 
 naver_key, naver_secret, naver_customer, anthropic_key, missing = check_env()
 if missing:
@@ -183,7 +190,7 @@ if missing:
     st.stop()
 
 step_bar(st.session_state.step if st.session_state.step >= 0 else 0)
-st.markdown("---")
+st.divider()
 
 
 # ════════════════════════════════════════════════
@@ -202,7 +209,7 @@ if st.session_state.step == 0:
             st.markdown(f"**{icon} {title}**")
             st.caption(desc)
 
-    st.markdown("---")
+    st.divider()
     col1, col2 = st.columns(2)
     with col1:
         st.markdown("**📂 지원 카테고리**")
@@ -460,6 +467,10 @@ elif st.session_state.step == 2:
             brand_connect_url=st.session_state.brand_url,
         )
         st.session_state.post_content = post
+
+        # HTML 변환
+        html_code = to_naver_html(post)
+        st.session_state.post_html = html_code
         progress.progress(90)
 
         # 파일 저장
@@ -469,6 +480,8 @@ elif st.session_state.step == 2:
             f.write(post)
             if image_guide:
                 f.write("\n\n" + image_guide)
+        with open(output_dir / "blog_post.html", "w", encoding="utf-8") as f:
+            f.write(html_code)
 
         progress.progress(100)
         st.session_state.step = 3
@@ -484,9 +497,10 @@ elif st.session_state.step == 2:
 # STEP 3: 결과 화면
 # ════════════════════════════════════════════════
 elif st.session_state.step == 3:
-    post    = st.session_state.post_content
-    images  = st.session_state.saved_images
-    info    = st.session_state.product_info or {}
+    post      = st.session_state.post_content
+    html_code = st.session_state.post_html or to_naver_html(post)
+    images    = st.session_state.saved_images
+    info      = st.session_state.product_info or {}
 
     # 통계 카드
     c1, c2, c3, c4 = st.columns(4)
@@ -503,9 +517,7 @@ elif st.session_state.step == 3:
                 unsafe_allow_html=True,
             )
 
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    tab1, tab2, tab3 = st.tabs(["📄 완성된 글", "🔑 수집된 키워드", "🖼️ 이미지"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📄 완성된 글", "🌐 HTML 코드", "🔑 서브키워드", "🖼️ 이미지"])
 
     # ── 탭1: 완성 글 ──────────────────────────
     with tab1:
@@ -513,24 +525,26 @@ elif st.session_state.step == 3:
             f'<div class="post-box">{post}</div>',
             unsafe_allow_html=True,
         )
-        st.markdown("<br>", unsafe_allow_html=True)
+        st.caption("아래 텍스트 박스의 오른쪽 상단 복사 아이콘을 클릭하면 전체 복사됩니다.")
+        st.code(post, language="")
 
-        dl_col, _, re_col = st.columns([1, 0.2, 1])
-        with dl_col:
+        col_dl, col_regen = st.columns(2)
+        with col_dl:
             st.download_button(
-                "💾 파일로 저장 (.txt)",
+                "💾 .txt 파일로 저장",
                 data=post.encode("utf-8"),
                 file_name=f"blog_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
                 mime="text/plain",
                 use_container_width=True,
             )
-        with re_col:
+        with col_regen:
             if st.button("🔄 글 다시 생성하기", use_container_width=True):
                 st.session_state.post_content = None
+                st.session_state.post_html = None
                 st.session_state.step = 2
                 st.rerun()
 
-        st.markdown("---")
+        st.divider()
         st.markdown("#### ✏️ 수정 요청")
         feedback = st.text_area(
             "수정하고 싶은 내용을 구체적으로 입력하세요",
@@ -540,25 +554,44 @@ elif st.session_state.step == 3:
             with st.spinner("수정 중..."):
                 try:
                     gen = ContentGenerator(anthropic_key)
-                    st.session_state.post_content = gen.refine_post(post, feedback)
+                    new_post = gen.refine_post(post, feedback)
+                    st.session_state.post_content = new_post
+                    st.session_state.post_html = to_naver_html(new_post)
                     out = Path(st.session_state.output_dir) / "blog_post.txt"
                     with open(out, "w", encoding="utf-8") as f:
-                        f.write(st.session_state.post_content)
+                        f.write(new_post)
+                    with open(Path(st.session_state.output_dir) / "blog_post.html", "w", encoding="utf-8") as f:
+                        f.write(st.session_state.post_html)
                     st.success("수정 완료!")
                     st.rerun()
                 except Exception as e:
                     st.error(f"수정 실패: {e}")
 
-    # ── 탭2: 키워드 ────────────────────────────
+    # ── 탭2: HTML 코드 ─────────────────────────
     with tab2:
+        st.caption("아래 HTML을 복사해서 네이버 블로그 에디터의 'HTML 편집' 모드에 붙여넣으세요.")
+        st.info("코드 박스 오른쪽 상단의 복사 아이콘을 클릭하면 전체 복사됩니다.", icon="💡")
+        st.code(html_code, language="html")
+        st.download_button(
+            "💾 .html 파일로 저장",
+            data=html_code.encode("utf-8"),
+            file_name=f"blog_{datetime.now().strftime('%Y%m%d_%H%M')}.html",
+            mime="text/html",
+            use_container_width=True,
+        )
+        with st.expander("🔍 HTML 미리보기"):
+            components.html(html_code, height=600, scrolling=True)
+
+    # ── 탭3: 키워드 ────────────────────────────
+    with tab3:
         if st.session_state.sub_keywords:
             st.markdown("#### 글에 포함된 서브키워드")
             render_kw_chips(st.session_state.sub_keywords)
         else:
             st.info("수집된 서브키워드가 없습니다.")
 
-    # ── 탭3: 이미지 ────────────────────────────
-    with tab3:
+    # ── 탭4: 이미지 ────────────────────────────
+    with tab4:
         if images:
             st.caption(f"저장 위치: `{st.session_state.output_dir}/images/`")
             cols = st.columns(min(len(images), 3))
@@ -571,7 +604,7 @@ elif st.session_state.step == 3:
         else:
             st.info("다운로드된 이미지가 없습니다. 직접 제품 이미지를 추가해주세요.")
 
-    st.markdown("---")
+    st.divider()
     if st.button("🏠 새 글 작성하기 (처음으로)", type="primary"):
         reset()
         st.rerun()
