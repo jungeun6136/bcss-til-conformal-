@@ -75,6 +75,16 @@ DEFAULTS = {
     "saved_images": [],
     "output_dir": None,
     "error_msg": "",
+    # 검색 UI 상태
+    "search_results": [],
+    "search_query": "",
+    "comp_sr_0": [],   # 경쟁제품1 검색결과
+    "comp_sr_1": [],   # 경쟁제품2 검색결과
+    "comp_sq_0": "",   # 경쟁제품1 검색어
+    "comp_sq_1": "",   # 경쟁제품2 검색어
+    "comp_sel_0": None,  # 경쟁제품1 선택값
+    "comp_sel_1": None,  # 경쟁제품2 선택값
+    "kw_researched": False,
 }
 for k, v in DEFAULTS.items():
     if k not in st.session_state:
@@ -115,6 +125,63 @@ def step_bar(current: int):
 def render_kw_chips(kws):
     st.markdown("".join(f'<span class="kw-chip">#{k}</span>' for k in kws),
                 unsafe_allow_html=True)
+
+
+def render_product_cards(results: list, key_prefix: str, sel_key: str):
+    """상품 목록을 카드 그리드로 표시. 선택 시 session_state[sel_key]에 저장."""
+    COLS = 4
+    sel = st.session_state.get(sel_key)
+
+    for row_start in range(0, len(results), COLS):
+        chunk = results[row_start: row_start + COLS]
+        cols = st.columns(len(chunk))
+        for col, product in zip(cols, chunk):
+            idx = results.index(product)
+            with col:
+                is_sel = bool(
+                    sel
+                    and sel.get("price") == product.get("price")
+                    and sel.get("name") == product.get("name")
+                )
+                border = "#03C75A" if is_sel else "#e0e0e0"
+                bg = "#f0faf4" if is_sel else "#ffffff"
+
+                # 이미지
+                image = product.get("image", "")
+                if image:
+                    try:
+                        st.image(image, use_container_width=True)
+                    except Exception:
+                        st.markdown('<div style="height:80px;background:#f5f5f5;border-radius:6px;"></div>',
+                                    unsafe_allow_html=True)
+                else:
+                    st.markdown('<div style="height:80px;background:#f5f5f5;border-radius:6px;"></div>',
+                                unsafe_allow_html=True)
+
+                name = product.get("name", "")
+                short = (name[:26] + "…") if len(name) > 26 else name
+                price = product.get("price", "")
+                rt = product.get("rating", "")
+                rc = product.get("review_count", "")
+                brand = product.get("brand", "") or product.get("mall_name", "")
+
+                st.markdown(
+                    f'<div style="border:2px solid {border};background:{bg};border-radius:8px;'
+                    f'padding:8px;margin:2px 0;">'
+                    f'<div style="font-size:0.78rem;font-weight:600;min-height:2.2em;line-height:1.3;color:#1a1a1a;">{short}</div>'
+                    + (f'<div style="font-size:0.7rem;color:#888;margin-top:2px;">{brand}</div>' if brand else '')
+                    + (f'<div style="color:#e53935;font-size:1rem;font-weight:800;margin:4px 0;">{price}원</div>' if price else '')
+                    + (f'<div style="font-size:0.7rem;color:#666;">⭐{rt}' + (f' · {rc}개' if rc else '') + '</div>' if rt or rc else '')
+                    + '</div>',
+                    unsafe_allow_html=True,
+                )
+
+                btn_label = "✅ 선택됨" if is_sel else "선택"
+                if st.button(btn_label, key=f"{key_prefix}_{idx}",
+                             use_container_width=True,
+                             type="primary" if is_sel else "secondary"):
+                    st.session_state[sel_key] = dict(product)
+                    st.rerun()
 
 
 # ── 사이드바 ─────────────────────────────────────────
@@ -168,12 +235,16 @@ with st.sidebar:
 
     if st.session_state.step == 0:
         can_go = bool(keyword and brand_url)
-        if st.button("🔍 제품 정보 수집하기", type="primary",
+        if st.button("➡️ 제품 검색 시작", type="primary",
                      use_container_width=True, disabled=not can_go):
-            st.session_state.keyword  = keyword
+            st.session_state.keyword   = keyword
             st.session_state.brand_url = brand_url
             st.session_state.category  = category
             st.session_state.post_type = post_type
+            st.session_state.search_query = keyword
+            st.session_state.comp_sq_0 = ""
+            st.session_state.comp_sq_1 = ""
+            st.session_state.kw_researched = False
             st.session_state.step = 1
             st.rerun()
         if not can_go:
@@ -222,222 +293,154 @@ if st.session_state.step == 0:
 
 
 # ════════════════════════════════════════════════
-# STEP 1: 제품 정보 수집 & 확인
+# STEP 1: 제품 검색 & 선택
 # ════════════════════════════════════════════════
 elif st.session_state.step == 1:
-    st.markdown("### 🔍 제품 정보 수집 중...")
+    st.markdown("### 🛍️ 제품 검색 & 선택")
 
-    if st.session_state.product_info is None:
-        progress = st.progress(0)
-        status   = st.empty()
+    naver_cid = os.getenv("NAVER_CLIENT_ID", "")
+    naver_csec = os.getenv("NAVER_CLIENT_SECRET", "")
+    scraper = ProductScraper(naver_cid, naver_csec)
 
-        try:
-            # ① 키워드 수집
-            status.markdown("**1/3  🔍 연관 키워드 수집 중...**")
-            progress.progress(10)
-            researcher = NaverKeywordResearch(naver_key, naver_secret, naver_customer)
-            raw_kws = researcher.get_related_keywords(st.session_state.keyword, top_n=30)
-            st.session_state.sub_keywords = researcher.select_sub_keywords(raw_kws, count=8)
+    # ── 키워드 리서치 (최초 1회) ──────────────────────────
+    if not st.session_state.kw_researched:
+        with st.spinner("🔑 연관 키워드 수집 중..."):
+            try:
+                researcher = NaverKeywordResearch(naver_key, naver_secret, naver_customer)
+                raw_kws = researcher.get_related_keywords(st.session_state.keyword, top_n=30)
+                st.session_state.sub_keywords = researcher.select_sub_keywords(raw_kws, count=8)
+            except Exception:
+                st.session_state.sub_keywords = []
+        st.session_state.kw_researched = True
+        st.rerun()
 
-            # ② URL + 네이버 쇼핑 API 스크래핑
-            status.markdown("**2/3  🛍️ 제품 정보 수집 중...**")
-            progress.progress(35)
-            naver_client_id     = os.getenv("NAVER_CLIENT_ID", "")
-            naver_client_secret = os.getenv("NAVER_CLIENT_SECRET", "")
-            scraper = ProductScraper(naver_client_id, naver_client_secret)
-            info = scraper.research_product(
-                st.session_state.brand_url, st.session_state.keyword
-            )
+    # ── 메인 제품 검색 ────────────────────────────────────
+    st.markdown("#### 1. 메인 제품 선택")
+    st.caption("제품명을 검색해서 카드를 클릭하면 정확한 최저가가 바로 적용됩니다.")
 
-            # ③ 핵심 필드가 비어있으면 Claude가 직접 리서치
-            missing_fields = not info.get("price") or not info.get("description") or not info.get("specs")
-            if missing_fields:
-                status.markdown("**3/4  🤖 Claude가 제품 정보 보완 중...**")
-                progress.progress(55)
-                generator = ContentGenerator(anthropic_key)
-                claude_info = generator.research_product(
-                    st.session_state.keyword,
-                    st.session_state.brand_url,
-                    CATEGORIES.get(st.session_state.category, st.session_state.category),
-                )
-                for field in ["price", "description", "rating", "review_count"]:
-                    if not info.get(field) and claude_info.get(field):
-                        info[field] = claude_info[field]
-                if not info.get("specs") and claude_info.get("specs"):
-                    info["specs"] = claude_info["specs"]
-                if claude_info.get("pros"):
-                    info["pros"] = claude_info["pros"]
-                if claude_info.get("cons"):
-                    info["cons"] = claude_info["cons"]
-                if claude_info.get("key_features"):
-                    info["key_features"] = claude_info["key_features"]
-
-            st.session_state.product_info = info
-
-            # ④ 비교형 글일 때: 실제 경쟁 제품 자동 수집
-            if st.session_state.post_type == "compare":
-                status.markdown("**4/4  ⚔️ 실제 경쟁 제품 조사 중...**")
-                progress.progress(75)
-                naver_client_id     = os.getenv("NAVER_CLIENT_ID", "")
-                naver_client_secret = os.getenv("NAVER_CLIENT_SECRET", "")
-                comp_researcher = CompetitorResearcher(anthropic_key, naver_client_id, naver_client_secret)
-                competitors = comp_researcher.research(
-                    product_name=info.get("name", st.session_state.keyword),
-                    category=CATEGORIES.get(st.session_state.category, st.session_state.category),
-                    price=info.get("price", ""),
-                    keyword=st.session_state.keyword,
-                )
-                st.session_state.competitors = competitors
-
-            progress.progress(100)
-            status.markdown("✅ **수집 완료! 아래 내용을 확인하고 수정하세요.**")
-
-        except Exception as e:
-            st.session_state.step = -1
-            st.session_state.error_msg = str(e)
+    cq, cb = st.columns([5, 1])
+    with cq:
+        mq = st.text_input(
+            "검색어", label_visibility="collapsed",
+            value=st.session_state.search_query or st.session_state.keyword,
+            placeholder="예) 삼성 에어프라이어 5.5L",
+            key="main_q",
+        )
+    with cb:
+        if st.button("🔍 검색", key="main_search", use_container_width=True):
+            with st.spinner("검색 중..."):
+                st.session_state.search_results = scraper.search_products(mq, top_n=8)
+                st.session_state.search_query = mq
+                st.session_state.product_info = None  # 검색어 바뀌면 선택 초기화
             st.rerun()
+
+    if st.session_state.search_results:
+        cnt = len(st.session_state.search_results)
+        st.markdown(f"**검색 결과 {cnt}개** (가격 낮은 순 · 클릭해서 선택)")
+        render_product_cards(st.session_state.search_results, "main", "product_info")
 
     info = st.session_state.product_info
     if info:
-        st.success("제품 정보 수집 완료! 내용을 확인하고 수정한 뒤 글 작성을 진행하세요.")
-        st.markdown("#### 📋 수집된 제품 정보")
-        st.caption("잘못된 정보는 직접 수정하세요. 수정한 내용이 그대로 블로그 글에 반영됩니다.")
-
-        col1, col2 = st.columns(2)
-        with col1:
-            new_name = st.text_input("제품명", value=info.get("name", ""))
-            new_price = st.text_input("최저가 (원)", value=info.get("price", ""),
-                                      placeholder="예) 89,000")
-            new_rating = st.text_input("평점", value=info.get("rating", ""),
-                                       placeholder="예) 4.7")
-            new_review = st.text_input("리뷰 수", value=info.get("review_count", ""),
-                                       placeholder="예) 1,234")
-        with col2:
-            new_desc = st.text_area("제품 설명",
-                                    value=info.get("description", ""),
-                                    height=160,
-                                    placeholder="제품의 주요 특징, 용도, 장점 등을 입력하세요.")
-
-        # 프로모션/할인 정보
-        promotions = info.get("promotions", {})
-        if promotions:
-            st.markdown("**🏷️ 할인/프로모션 정보**")
-            promo_cols = st.columns(len(promotions))
-            for col, (k, v) in zip(promo_cols, promotions.items()):
-                with col:
-                    st.markdown(
-                        f'<div style="background:#fff8e1;border:1px solid #ffe082;border-radius:8px;'
-                        f'padding:8px 12px;text-align:center;">'
-                        f'<div style="font-size:0.75rem;color:#f57f17;">{k}</div>'
-                        f'<div style="font-size:1rem;font-weight:700;color:#e65100;">{v}</div>'
-                        f'</div>',
-                        unsafe_allow_html=True,
-                    )
-
-        st.markdown("**스펙 정보**")
-        specs = info.get("specs", {})
-        if specs:
-            spec_text = "\n".join(f"{k}: {v}" for k, v in specs.items())
-        else:
-            spec_text = ""
-        new_specs_text = st.text_area(
-            "스펙 (한 줄에 하나씩, 항목명: 값 형식)",
-            value=spec_text,
-            height=140,
-            placeholder="무게: 1.2kg\n색상: 블랙\n용량: 5.5L",
+        st.success(
+            f"✅ 선택됨: **{info.get('name', '')}**  |  "
+            f"최저가: **{info.get('price', '')}원**"
+            + (f"  |  ⭐{info.get('rating', '')} ({info.get('review_count', '')}개)" if info.get("rating") else "")
         )
 
-        # Claude 리서치 결과 (장단점/특징)
-        pros = info.get("pros", [])
-        cons = info.get("cons", [])
-        features = info.get("key_features", [])
-        if pros or cons or features:
-            st.markdown("**🤖 Claude 리서치 결과**")
-            c_a, c_b = st.columns(2)
-            with c_a:
-                if features:
-                    st.markdown("**주요 특징**")
-                    for f in features:
-                        st.markdown(f"- {f}")
-                if pros:
-                    st.markdown("**장점**")
-                    for p in pros:
-                        st.markdown(f"- ✅ {p}")
-            with c_b:
-                if cons:
-                    st.markdown("**주의사항 / 단점**")
-                    for c in cons:
-                        st.markdown(f"- ⚠️ {c}")
-            st.caption("위 내용은 Claude의 지식 기반 리서치 결과입니다. 실제와 다를 수 있으니 확인 후 사용하세요.")
-
-        # 비교형 글일 때: 경쟁 제품 표시
-        if st.session_state.post_type == "compare" and st.session_state.competitors:
-            st.divider()
-            st.markdown("#### ⚔️ 수집된 경쟁 제품")
-            st.caption("아래 경쟁 제품들과의 실제 스펙 비교를 바탕으로 글이 작성됩니다.")
-            for i, comp in enumerate(st.session_state.competitors, 1):
-                price_label = f"{comp.get('price', '미확인')}원" if comp.get("price") else "가격 미확인"
-                review_label = f" · 리뷰 {comp.get('review_count')}개" if comp.get("review_count") else ""
-                with st.expander(f"경쟁 제품 {i}: {comp.get('name', '미확인')}  |  최저가: {price_label}{review_label}"):
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        img_src = comp.get("image") or (comp.get("images", [None])[0] if comp.get("images") else None)
-                        if img_src:
-                            try:
-                                st.image(img_src, width=160)
-                            except Exception:
-                                pass
-                        if comp.get("key_features"):
-                            st.markdown("**주요 특징**")
-                            for f in comp["key_features"][:3]:
-                                st.markdown(f"- {f}")
-                        if comp.get("pros"):
-                            st.markdown("**장점**")
-                            for p in comp["pros"]:
-                                st.markdown(f"- ✅ {p}")
-                    with c2:
-                        if comp.get("specs"):
-                            st.markdown("**스펙**")
-                            for k, v in list(comp["specs"].items())[:8]:
-                                st.markdown(f"- **{k}**: {v}")
-                        if comp.get("cons"):
-                            st.markdown("**약점**")
-                            for c in comp["cons"]:
-                                st.markdown(f"- ⚠️ {c}")
-        elif st.session_state.post_type == "compare" and not st.session_state.competitors:
-            st.info("경쟁 제품 수집 결과가 없습니다. 글 작성은 계속 진행할 수 있습니다.")
-
-        # 연관 키워드 미리보기
-        if st.session_state.sub_keywords:
-            st.markdown("**🔑 글에 포함될 서브키워드**")
-            render_kw_chips(st.session_state.sub_keywords)
-
-        st.markdown("---")
-        col_a, col_b = st.columns([1, 1])
-        with col_a:
-            if st.button("← 다시 입력하기", use_container_width=True):
-                reset()
-                st.rerun()
-        with col_b:
-            if st.button("✅ 이 정보로 블로그 글 작성하기", type="primary",
-                         use_container_width=True):
-                # 수정된 내용 반영
-                new_specs = {}
-                for line in new_specs_text.strip().splitlines():
-                    if ":" in line:
-                        k, _, v = line.partition(":")
+        with st.expander("✏️ 제품 정보 수정 (필요 시)", expanded=False):
+            ec1, ec2 = st.columns(2)
+            with ec1:
+                info["name"]         = st.text_input("제품명", value=info.get("name", ""), key="edit_name")
+                info["price"]        = st.text_input("최저가 (원)", value=info.get("price", ""), key="edit_price")
+                info["rating"]       = st.text_input("평점", value=info.get("rating", ""), key="edit_rt", placeholder="예) 4.7")
+                info["review_count"] = st.text_input("리뷰 수", value=info.get("review_count", ""), key="edit_rc", placeholder="예) 1,234")
+            with ec2:
+                info["description"] = st.text_area("제품 설명", value=info.get("description", ""), height=150, key="edit_desc")
+            st.markdown("**스펙 정보** (항목명: 값 형식으로 한 줄씩)")
+            spec_str = "\n".join(f"{k}: {v}" for k, v in info.get("specs", {}).items())
+            new_spec_str = st.text_area("스펙", value=spec_str, height=120, key="edit_specs", label_visibility="collapsed")
+            new_specs = {}
+            for ln in new_spec_str.strip().splitlines():
+                if ":" in ln:
+                    k, _, v = ln.partition(":")
+                    if k.strip() and v.strip():
                         new_specs[k.strip()] = v.strip()
+            info["specs"] = new_specs
 
-                st.session_state.product_info.update({
-                    "name": new_name,
-                    "price": new_price,
-                    "rating": new_rating,
-                    "review_count": new_review,
-                    "description": new_desc,
-                    "specs": new_specs,
-                })
-                st.session_state.step = 2
-                st.rerun()
+    # ── 경쟁 제품 검색 (비교형만) ─────────────────────────
+    if st.session_state.post_type == "compare":
+        st.divider()
+        st.markdown("#### 2. 경쟁 제품 선택 (비교형)")
+        st.caption("비교할 경쟁 제품을 검색해서 선택하세요. 최대 2개까지 선택 가능합니다.")
+
+        for ci in range(2):
+            sr_key  = f"comp_sr_{ci}"
+            sq_key  = f"comp_sq_{ci}"
+            sel_key = f"comp_sel_{ci}"
+            label   = f"경쟁 제품 {ci + 1}"
+
+            st.markdown(f"**{label}**")
+            cq2, cb2 = st.columns([5, 1])
+            with cq2:
+                cq_val = st.text_input(
+                    label, label_visibility="collapsed",
+                    value=st.session_state.get(sq_key, ""),
+                    placeholder="예) LG 에어프라이어 6L",
+                    key=f"comp_q_{ci}",
+                )
+            with cb2:
+                if st.button("🔍 검색", key=f"comp_btn_{ci}", use_container_width=True):
+                    with st.spinner(f"{label} 검색 중..."):
+                        st.session_state[sr_key]  = scraper.search_products(cq_val, top_n=8)
+                        st.session_state[sq_key]  = cq_val
+                        st.session_state[sel_key] = None
+                    st.rerun()
+
+            comp_results = st.session_state.get(sr_key, [])
+            if comp_results:
+                render_product_cards(comp_results, f"c{ci}", sel_key)
+
+            sel = st.session_state.get(sel_key)
+            if sel:
+                st.success(
+                    f"✅ {label} 선택됨: **{sel.get('name', '')}**  |  "
+                    f"최저가: **{sel.get('price', '')}원**"
+                    + (f"  |  ⭐{sel.get('rating', '')} ({sel.get('review_count', '')}개)" if sel.get("rating") else "")
+                )
+
+    # ── 서브키워드 ────────────────────────────────────────
+    if st.session_state.sub_keywords:
+        st.divider()
+        st.markdown("**🔑 글에 포함될 서브키워드**")
+        render_kw_chips(st.session_state.sub_keywords)
+
+    # ── 하단 버튼 ─────────────────────────────────────────
+    st.divider()
+    col_back, col_next = st.columns([1, 2])
+    with col_back:
+        if st.button("← 처음으로", use_container_width=True):
+            reset()
+            st.rerun()
+    with col_next:
+        can_proceed = st.session_state.product_info is not None
+        if st.button(
+            "✅ 이 정보로 블로그 글 작성하기",
+            type="primary",
+            use_container_width=True,
+            disabled=not can_proceed,
+        ):
+            # 경쟁제품 조합
+            if st.session_state.post_type == "compare":
+                comps = []
+                for ci in range(2):
+                    sel = st.session_state.get(f"comp_sel_{ci}")
+                    if sel:
+                        comps.append(dict(sel))
+                st.session_state.competitors = comps
+            st.session_state.step = 2
+            st.rerun()
+        if not can_proceed:
+            st.caption("위에서 메인 제품을 먼저 선택해주세요.")
 
 
 # ════════════════════════════════════════════════

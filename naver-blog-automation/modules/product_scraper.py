@@ -54,6 +54,177 @@ class ProductScraper:
         self.naver_client_secret = naver_client_secret
 
     # ═══════════════════════════════════════════════════════
+    # 쇼핑 검색 (카드 선택 UI용)
+    # ═══════════════════════════════════════════════════════
+    def search_products(self, query: str, top_n: int = 8) -> List[Dict]:
+        """키워드 → 네이버 쇼핑 상품 목록 반환 (최저가순 정렬)"""
+        results = []
+
+        # 1순위: 공식 API → lprice가 확정 최저가
+        if self.naver_client_id and self.naver_client_secret:
+            results = self._search_official_api(query, min(top_n, 10))
+
+        # 2순위: 내부 JSON API
+        if not results:
+            results = self._search_json_api(query, top_n)
+
+        # 3순위: HTML 파싱
+        if not results:
+            results = self._search_html(query, top_n)
+
+        # 가격순 정렬
+        results.sort(key=lambda x: x.get("price_int", 0))
+        return results[:top_n]
+
+    def _search_official_api(self, query: str, n: int) -> List[Dict]:
+        try:
+            resp = requests.get(
+                "https://openapi.naver.com/v1/search/shop.json",
+                headers={
+                    "X-Naver-Client-Id": self.naver_client_id,
+                    "X-Naver-Client-Secret": self.naver_client_secret,
+                },
+                params={"query": query, "display": n, "sort": "sim"},
+                timeout=8,
+            )
+            items = resp.json().get("items", [])
+            results = []
+            for it in items:
+                price_int = _to_int(it.get("lprice", 0))
+                if price_int <= 100:
+                    continue
+                name = re.sub(r"<[^>]+>", "", it.get("title", "")).strip()
+                results.append({
+                    "name": name,
+                    "price": _fmt(price_int),
+                    "price_int": price_int,
+                    "image": it.get("image", ""),
+                    "brand": it.get("brand", "") or it.get("maker", ""),
+                    "mall_name": it.get("mallName", ""),
+                    "rating": "",
+                    "review_count": _fmt(_to_int(it.get("reviewCount", 0))),
+                    "source_url": it.get("link", ""),
+                    "category": it.get("category3", "") or it.get("category2", ""),
+                    "specs": {
+                        "브랜드": it.get("brand", ""),
+                        "제조사": it.get("maker", ""),
+                        "카테고리": it.get("category3", ""),
+                    },
+                    "description": "",
+                    "images": [it.get("image", "")],
+                    "promotions": {},
+                    "pros": [], "cons": [], "key_features": [],
+                })
+            return results
+        except Exception:
+            return []
+
+    def _search_json_api(self, query: str, n: int) -> List[Dict]:
+        try:
+            resp = self.session.get(
+                "https://search.shopping.naver.com/api/search",
+                params={
+                    "query": query, "sort": "sim",
+                    "productSet": "total", "viewType": "list",
+                    "pagingIndex": 1, "pagingSize": n,
+                },
+                headers={
+                    **HEADERS,
+                    "Referer": f"https://search.shopping.naver.com/search/all?query={quote(query)}",
+                    "Accept": "application/json, text/plain, */*",
+                    "Sec-Fetch-Site": "same-origin",
+                },
+                timeout=10,
+            )
+            if resp.status_code != 200:
+                return []
+            data = resp.json()
+            products = (
+                data.get("shoppingResult", {}).get("products", [])
+                or data.get("products", [])
+            )
+            results = []
+            for p in products:
+                price_int = _to_int(p.get("lowPrice") or p.get("price", 0))
+                if price_int <= 100:
+                    continue
+                specs = {}
+                for ak in ("attributes", "attribute", "spec"):
+                    a = p.get(ak, {})
+                    if isinstance(a, dict) and a:
+                        specs = {k: v for k, v in list(a.items())[:8] if k and v}
+                        break
+                results.append({
+                    "name": p.get("productName", "").strip(),
+                    "price": _fmt(price_int),
+                    "price_int": price_int,
+                    "image": p.get("imageUrl", ""),
+                    "brand": p.get("brand", ""),
+                    "mall_name": p.get("mallName", ""),
+                    "rating": str(p.get("reviewScore", "") or ""),
+                    "review_count": _fmt(_to_int(p.get("reviewCount", 0))),
+                    "source_url": "",
+                    "category": p.get("category3Name", ""),
+                    "specs": specs,
+                    "description": "",
+                    "images": [p.get("imageUrl", "")],
+                    "promotions": {},
+                    "pros": [], "cons": [], "key_features": [],
+                })
+            return results
+        except Exception:
+            return []
+
+    def _search_html(self, query: str, n: int) -> List[Dict]:
+        try:
+            url = f"https://search.shopping.naver.com/search/all?query={quote(query)}&sort=price_asc"
+            resp = self.session.get(url, timeout=12)
+            soup = BeautifulSoup(resp.text, "lxml")
+            tag = soup.find("script", {"id": "__NEXT_DATA__"})
+            if not tag:
+                return []
+            nd = json.loads(tag.string)
+            state = (
+                nd.get("props", {}).get("pageProps", {}).get("initialState", {})
+                or {}
+            )
+            products_raw = (
+                state.get("products", {}).get("list", [])
+                or state.get("list", [])
+            )
+            results = []
+            for pw in products_raw[:n]:
+                item = pw.get("item", pw)
+                price_int = _to_int(item.get("lowPrice") or item.get("salePrice") or item.get("price", 0))
+                if price_int <= 100:
+                    continue
+                image = ""
+                for k in ("imageUrl", "thumbnail", "img"):
+                    if item.get(k):
+                        image = item[k]
+                        break
+                results.append({
+                    "name": (item.get("productName") or item.get("name") or "").strip(),
+                    "price": _fmt(price_int),
+                    "price_int": price_int,
+                    "image": image,
+                    "brand": item.get("brand", ""),
+                    "mall_name": item.get("mallName", ""),
+                    "rating": str(item.get("reviewScore", "") or ""),
+                    "review_count": _fmt(_to_int(item.get("reviewCount", 0))),
+                    "source_url": url,
+                    "category": "",
+                    "specs": {},
+                    "description": "",
+                    "images": [image] if image else [],
+                    "promotions": {},
+                    "pros": [], "cons": [], "key_features": [],
+                })
+            return results
+        except Exception:
+            return []
+
+    # ═══════════════════════════════════════════════════════
     # 메인 리서치
     # ═══════════════════════════════════════════════════════
     def research_product(self, url: str, keyword: str) -> Dict:
