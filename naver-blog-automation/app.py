@@ -522,21 +522,38 @@ elif st.session_state.step == 1:
     naver_csec = os.getenv("NAVER_CLIENT_SECRET", "")
     scraper = ProductScraper(naver_cid, naver_csec)
 
-    # ── 키워드 리서치 (최초 1회) ──────────────────────────
+    # ── 키워드 리서치 + 자동 제품검색 (최초 1회) ─────────────
     if not st.session_state.kw_researched:
-        with st.spinner("🔑 연관 키워드 수집 중..."):
+        with st.spinner("🔑 키워드 분석 + 제품 검색 중..."):
             try:
                 researcher = NaverKeywordResearch(naver_key, naver_secret, naver_customer)
                 raw_kws = researcher.get_related_keywords(st.session_state.keyword, top_n=30)
                 st.session_state.sub_keywords = researcher.select_sub_keywords(raw_kws, count=8)
             except Exception:
                 st.session_state.sub_keywords = []
+            # 진입 시 자동으로 키워드 검색
+            kw = st.session_state.keyword
+            try:
+                auto_results = scraper.search_products(kw, top_n=8)
+                st.session_state.search_results = auto_results
+                st.session_state.search_query = kw
+            except Exception:
+                st.session_state.search_results = []
         st.session_state.kw_researched = True
         st.rerun()
 
+    # ── Naver Client 키 누락 경고 ────────────────────────────
+    if not naver_cid:
+        st.info(
+            "💡 **네이버 쇼핑 제품 검색**을 사용하려면 `.env`에 `NAVER_CLIENT_ID` / `NAVER_CLIENT_SECRET`을 추가하세요. "
+            "([developers.naver.com](https://developers.naver.com) → 앱 등록 → Shopping 검색 권한)  "
+            "현재는 **직접 입력 폼**으로 제품 정보를 입력할 수 있습니다.",
+            icon="ℹ️",
+        )
+
     # ── 메인 제품 검색 ────────────────────────────────────
     st.markdown("#### 1. 메인 제품 선택")
-    st.caption("제품명을 검색해서 카드를 클릭하면 정확한 최저가가 바로 적용됩니다.")
+    st.caption("제품명을 검색해서 카드를 클릭하거나, 아래 직접 입력 폼을 사용하세요.")
 
     cq, cb = st.columns([5, 1])
     with cq:
@@ -549,15 +566,49 @@ elif st.session_state.step == 1:
     with cb:
         if st.button("🔍 검색", key="main_search", use_container_width=True):
             with st.spinner("검색 중..."):
-                st.session_state.search_results = scraper.search_products(mq, top_n=8)
+                results = scraper.search_products(mq, top_n=8)
+                st.session_state.search_results = results
                 st.session_state.search_query = mq
-                st.session_state.product_info = None  # 검색어 바뀌면 선택 초기화
+                st.session_state.product_info = None
             st.rerun()
 
     if st.session_state.search_results:
         cnt = len(st.session_state.search_results)
         st.markdown(f"**검색 결과 {cnt}개** (가격 낮은 순 · 클릭해서 선택)")
         render_product_cards(st.session_state.search_results, "main", "product_info")
+    elif st.session_state.search_query:
+        st.warning("검색 결과가 없습니다. 다른 검색어를 시도하거나 아래 직접 입력 폼을 사용하세요.", icon="⚠️")
+
+    # ── 직접 입력 폼 (항상 접근 가능) ────────────────────────
+    if not st.session_state.product_info:
+        with st.expander(
+            "✍️ 제품 정보 직접 입력" + (" ← 검색 결과 없음 시 여기서 입력" if st.session_state.search_query and not st.session_state.search_results else ""),
+            expanded=bool(not st.session_state.search_results),
+        ):
+            mi1, mi2 = st.columns(2)
+            with mi1:
+                mn  = st.text_input("제품명 *", placeholder="예) 삼성 갤럭시 S25 256GB", key="mi_name")
+                mp  = st.text_input("최저가 (원) *", placeholder="예) 1,100,000", key="mi_price")
+                mb  = st.text_input("브랜드", placeholder="예) Samsung", key="mi_brand")
+            with mi2:
+                mr   = st.text_input("평점", placeholder="예) 4.7", key="mi_rating")
+                mc   = st.text_input("리뷰 수", placeholder="예) 2,345", key="mi_review")
+                mimg = st.text_input("이미지 URL (선택)", placeholder="https://...", key="mi_img")
+            md = st.text_area("제품 설명 / 스펙", placeholder="주요 특징, 스펙 등을 자유롭게 입력하세요", height=80, key="mi_desc")
+            if st.button("✅ 이 정보로 적용", type="primary", key="mi_apply"):
+                if mn and mp:
+                    price_raw = mp.replace(",", "").replace(" ", "")
+                    price_int = int(price_raw) if price_raw.isdigit() else 0
+                    st.session_state.product_info = {
+                        "name": mn, "price": mp, "price_int": price_int,
+                        "brand": mb, "rating": mr, "review_count": mc,
+                        "image": mimg, "images": [mimg] if mimg else [],
+                        "description": md, "specs": {}, "promotions": {},
+                        "pros": [], "cons": [], "key_features": [],
+                    }
+                    st.rerun()
+                else:
+                    st.error("제품명과 최저가는 필수 입력값입니다.")
 
     info = st.session_state.product_info
     if info:

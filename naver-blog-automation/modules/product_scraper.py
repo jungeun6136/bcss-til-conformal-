@@ -63,16 +63,18 @@ class ProductScraper:
         # 1순위: 공식 API → lprice가 확정 최저가
         if self.naver_client_id and self.naver_client_secret:
             results = self._search_official_api(query, min(top_n, 10))
+            print(f"[search] official API: {len(results)} results")
 
         # 2순위: 내부 JSON API
         if not results:
             results = self._search_json_api(query, top_n)
+            print(f"[search] json API: {len(results)} results")
 
         # 3순위: HTML 파싱
         if not results:
             results = self._search_html(query, top_n)
+            print(f"[search] html scrape: {len(results)} results")
 
-        # 가격순 정렬
         results.sort(key=lambda x: x.get("price_int", 0))
         return results[:top_n]
 
@@ -116,7 +118,8 @@ class ProductScraper:
                     "pros": [], "cons": [], "key_features": [],
                 })
             return results
-        except Exception:
+        except Exception as e:
+            print(f"[search] error: {e}")
             return []
 
     def _search_json_api(self, query: str, n: int) -> List[Dict]:
@@ -172,7 +175,8 @@ class ProductScraper:
                     "pros": [], "cons": [], "key_features": [],
                 })
             return results
-        except Exception:
+        except Exception as e:
+            print(f"[search] error: {e}")
             return []
 
     def _search_html(self, query: str, n: int) -> List[Dict]:
@@ -221,7 +225,8 @@ class ProductScraper:
                     "pros": [], "cons": [], "key_features": [],
                 })
             return results
-        except Exception:
+        except Exception as e:
+            print(f"[search] error: {e}")
             return []
 
     # ═══════════════════════════════════════════════════════
