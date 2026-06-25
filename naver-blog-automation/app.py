@@ -265,31 +265,272 @@ st.divider()
 
 
 # ════════════════════════════════════════════════
-# STEP 0: 초기 안내 화면
+# STEP 0: 메인 랜딩 페이지
 # ════════════════════════════════════════════════
 if st.session_state.step == 0:
-    st.markdown("### 사용 방법")
-    c1, c2, c3, c4 = st.columns(4)
-    for col, icon, title, desc in [
-        (c1, "1️⃣", "키워드 입력",       "블로그 주제 키워드를 왼쪽에 입력"),
-        (c2, "2️⃣", "URL 입력",          "브랜드커넥트 제품 링크 붙여넣기"),
-        (c3, "3️⃣", "제품 정보 확인",    "수집된 정보를 검토 후 수정 가능"),
-        (c4, "4️⃣", "글 생성",           "버튼 하나로 완성 글 + 이미지 출력"),
+
+    # ── 히어로 배너 (캔버스 파티클 + 카운트업 애니메이션) ────
+    components.html("""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:-apple-system,'Noto Sans KR',sans-serif;
+  background:linear-gradient(135deg,#060d1a 0%,#0d1f3c 45%,#081426 100%);
+  height:290px;overflow:hidden;position:relative;}
+canvas{position:absolute;top:0;left:0;width:100%;height:100%;}
+.hero{position:relative;z-index:10;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;height:100%;padding:20px;text-align:center;}
+.badge{background:rgba(3,199,90,.12);border:1px solid rgba(3,199,90,.35);color:#03C75A;
+  padding:5px 18px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:2.5px;
+  margin-bottom:16px;animation:fadeUp .6s ease forwards;}
+.title{font-size:2.1rem;font-weight:900;line-height:1.25;margin-bottom:10px;
+  animation:fadeUp .6s .15s ease both;}
+.gr{background:linear-gradient(90deg,#03C75A,#00e676,#69ff6e);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+.wh{color:#fff;}
+.sub{color:rgba(255,255,255,.55);font-size:.87rem;line-height:1.75;
+  animation:fadeUp .6s .3s ease both;}
+.sub strong{color:rgba(255,255,255,.82);}
+.stats{display:flex;gap:36px;margin-top:20px;animation:fadeUp .6s .45s ease both;}
+.stat{text-align:center;}
+.snum{font-size:1.45rem;font-weight:800;color:#03C75A;}
+.slbl{font-size:.66rem;color:rgba(255,255,255,.4);margin-top:2px;letter-spacing:.5px;}
+@keyframes fadeUp{from{opacity:0;transform:translateY(16px);}to{opacity:1;transform:translateY(0);}}
+</style></head><body>
+<canvas id="c"></canvas>
+<div class="hero">
+  <div class="badge">✨ AI-POWERED NAVER BLOG AUTOMATION</div>
+  <div class="title">
+    <span class="gr">네이버 블로그 자동화</span><br>
+    <span class="wh" style="font-size:1.45rem;font-weight:700;">키워드 하나로 완성되는 블로그 글</span>
+  </div>
+  <div class="sub">경쟁사 분석 · SEO 키워드 · AI 작성 · 이미지 수집까지<br>
+    <strong>한 번에 자동으로 처리</strong>됩니다</div>
+  <div class="stats">
+    <div class="stat"><div class="snum" id="n1">0</div><div class="slbl">서브키워드 자동분석</div></div>
+    <div class="stat"><div class="snum">4가지</div><div class="slbl">글 유형 지원</div></div>
+    <div class="stat"><div class="snum">~30초</div><div class="slbl">완성 소요 시간</div></div>
+    <div class="stat"><div class="snum">100%</div><div class="slbl">블로거 스타일 AI 작성</div></div>
+  </div>
+</div>
+<script>
+const canvas=document.getElementById('c');
+const ctx=canvas.getContext('2d');
+function resize(){canvas.width=window.innerWidth;canvas.height=290;}
+resize();
+const pts=Array.from({length:55},()=>({
+  x:Math.random()*canvas.width,y:Math.random()*canvas.height,
+  vx:(Math.random()-.5)*.45,vy:(Math.random()-.5)*.45,
+  r:Math.random()*1.6+.4,o:Math.random()*.45+.1
+}));
+function draw(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  pts.forEach(p=>{
+    p.x+=p.vx;p.y+=p.vy;
+    if(p.x<0||p.x>canvas.width)p.vx*=-1;
+    if(p.y<0||p.y>canvas.height)p.vy*=-1;
+    ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
+    ctx.fillStyle=`rgba(3,199,90,${p.o})`;ctx.fill();
+  });
+  for(let i=0;i<pts.length;i++)for(let j=i+1;j<pts.length;j++){
+    const dx=pts[j].x-pts[i].x,dy=pts[j].y-pts[i].y,d=Math.sqrt(dx*dx+dy*dy);
+    if(d<110){ctx.beginPath();ctx.moveTo(pts[i].x,pts[i].y);ctx.lineTo(pts[j].x,pts[j].y);
+      ctx.strokeStyle=`rgba(3,199,90,${.12*(1-d/110)})`;ctx.lineWidth=.5;ctx.stroke();}
+  }
+  requestAnimationFrame(draw);
+}
+draw();
+let n=0;const el=document.getElementById('n1');
+const t=setInterval(()=>{n+=2;if(n>=30){n=30;clearInterval(t);}el.textContent=n+'+';},40);
+</script></body></html>""", height=290)
+
+    # ── 프로세스 플로우 인포그래픽 (SVG 애니메이션) ──────────
+    components.html("""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:-apple-system,'Noto Sans KR',sans-serif;background:#fff;
+  padding:22px 16px 16px;}
+.label{text-align:center;font-size:.72rem;font-weight:700;color:#03C75A;
+  letter-spacing:2px;margin-bottom:18px;}
+.flow{display:flex;align-items:center;justify-content:center;}
+.step{display:flex;flex-direction:column;align-items:center;gap:9px;
+  flex:0 0 auto;width:118px;animation:popIn .5s ease both;}
+.step:nth-child(1){animation-delay:.05s;} .step:nth-child(3){animation-delay:.25s;}
+.step:nth-child(5){animation-delay:.45s;} .step:nth-child(7){animation-delay:.65s;}
+.step:nth-child(9){animation-delay:.85s;}
+.icon-wrap{width:60px;height:60px;border-radius:50%;display:flex;align-items:center;
+  justify-content:center;font-size:1.45rem;position:relative;
+  box-shadow:0 4px 18px rgba(0,0,0,.1);}
+.ring{position:absolute;inset:-5px;border-radius:50%;
+  border:2px dashed rgba(3,199,90,.28);animation:spin 9s linear infinite;}
+.num{position:absolute;top:-3px;right:-3px;width:19px;height:19px;
+  background:#03C75A;color:#fff;border-radius:50%;font-size:.6rem;font-weight:800;
+  display:flex;align-items:center;justify-content:center;}
+.stitle{font-size:.78rem;font-weight:800;color:#1a1a1a;text-align:center;}
+.sdesc{font-size:.67rem;color:#888;text-align:center;line-height:1.4;}
+.arr{flex:1;display:flex;align-items:center;padding:0 2px;margin-bottom:32px;}
+.arr svg{width:100%;height:22px;overflow:visible;}
+@keyframes popIn{from{opacity:0;transform:scale(.65);}to{opacity:1;transform:scale(1);}}
+@keyframes spin{to{transform:rotate(360deg);}}
+@keyframes dash{to{stroke-dashoffset:0;}}
+</style></head><body>
+<div class="label">▶ 자동화 프로세스 플로우</div>
+<div class="flow">
+  <div class="step">
+    <div class="icon-wrap" style="background:linear-gradient(135deg,#e8f5e9,#c8e6c9);">
+      <span>🎯</span><div class="ring"></div><div class="num">1</div>
+    </div>
+    <div class="stitle">키워드 입력</div>
+    <div class="sdesc">메인 키워드 +<br>브랜드 URL</div>
+  </div>
+  <div class="arr"><svg viewBox="0 0 56 22"><path d="M2 11 H44" stroke="#03C75A" stroke-width="2"
+    stroke-dasharray="5 3" stroke-dashoffset="60"
+    style="animation:dash 1s .2s linear forwards;"/>
+    <path d="M40 5 L50 11 L40 17" stroke="#03C75A" stroke-width="2" fill="none"/></svg></div>
+  <div class="step">
+    <div class="icon-wrap" style="background:linear-gradient(135deg,#e3f2fd,#bbdefb);">
+      <span>🔑</span><div class="ring"></div><div class="num">2</div>
+    </div>
+    <div class="stitle">키워드 분석</div>
+    <div class="sdesc">30개+ 연관키워드<br>자동 수집</div>
+  </div>
+  <div class="arr"><svg viewBox="0 0 56 22"><path d="M2 11 H44" stroke="#03C75A" stroke-width="2"
+    stroke-dasharray="5 3" stroke-dashoffset="60"
+    style="animation:dash 1s .5s linear forwards;"/>
+    <path d="M40 5 L50 11 L40 17" stroke="#03C75A" stroke-width="2" fill="none"/></svg></div>
+  <div class="step">
+    <div class="icon-wrap" style="background:linear-gradient(135deg,#fff3e0,#ffe0b2);">
+      <span>🛍️</span><div class="ring"></div><div class="num">3</div>
+    </div>
+    <div class="stitle">제품 검색·선택</div>
+    <div class="sdesc">최저가 확정 &<br>경쟁사 분석</div>
+  </div>
+  <div class="arr"><svg viewBox="0 0 56 22"><path d="M2 11 H44" stroke="#03C75A" stroke-width="2"
+    stroke-dasharray="5 3" stroke-dashoffset="60"
+    style="animation:dash 1s .8s linear forwards;"/>
+    <path d="M40 5 L50 11 L40 17" stroke="#03C75A" stroke-width="2" fill="none"/></svg></div>
+  <div class="step">
+    <div class="icon-wrap" style="background:linear-gradient(135deg,#fce4ec,#f8bbd0);">
+      <span>🤖</span><div class="ring"></div><div class="num">4</div>
+    </div>
+    <div class="stitle">AI 글 작성</div>
+    <div class="sdesc">SEO 최적화<br>블로거 스타일</div>
+  </div>
+  <div class="arr"><svg viewBox="0 0 56 22"><path d="M2 11 H44" stroke="#03C75A" stroke-width="2"
+    stroke-dasharray="5 3" stroke-dashoffset="60"
+    style="animation:dash 1s 1.1s linear forwards;"/>
+    <path d="M40 5 L50 11 L40 17" stroke="#03C75A" stroke-width="2" fill="none"/></svg></div>
+  <div class="step">
+    <div class="icon-wrap" style="background:linear-gradient(135deg,#e8eaf6,#c5cae9);">
+      <span>✅</span><div class="ring"></div><div class="num">5</div>
+    </div>
+    <div class="stitle">완성 & 다운로드</div>
+    <div class="sdesc">HTML·텍스트 &<br>이미지 저장</div>
+  </div>
+</div>
+</body></html>""", height=205)
+
+    # ── 핵심 기능 카드 ─────────────────────────────────────────
+    st.markdown(
+        '<div style="margin:8px 0 10px;">'
+        '<span style="font-size:.72rem;font-weight:700;color:#03C75A;letter-spacing:2px;">▶ 핵심 기능</span>'
+        '</div>', unsafe_allow_html=True,
+    )
+    fc1, fc2, fc3 = st.columns(3)
+    for col, icon, bg, accent, title, desc in [
+        (fc1, "🤖", "#e8f5e9", "#1b5e20",
+         "AI 블로거 스타일 작성",
+         "단순 요약 아님 — 1인칭 후기·후킹 도입부·실사용 경험 등 진짜 블로거처럼"),
+        (fc2, "🔑", "#e3f2fd", "#0d47a1",
+         "SEO 키워드 자동 삽입",
+         "네이버 검색광고 API로 30개+ 연관키워드 분석 → 상위 8개 자연스럽게 배치"),
+        (fc3, "📸", "#fff3e0", "#bf360c",
+         "이미지 자동 수집",
+         "네이버 쇼핑 제품 이미지 자동 다운로드 → 블로그 삽입 가이드까지 제공"),
     ]:
         with col:
-            st.markdown(f"**{icon} {title}**")
-            st.caption(desc)
+            st.markdown(
+                f'<div style="background:{bg};border-radius:14px;padding:18px 16px;'
+                f'min-height:140px;border:1px solid rgba(0,0,0,.05);">'
+                f'<div style="font-size:1.55rem;margin-bottom:8px;">{icon}</div>'
+                f'<div style="font-size:.82rem;font-weight:800;color:{accent};margin-bottom:6px;">{title}</div>'
+                f'<div style="font-size:.75rem;color:#555;line-height:1.55;">{desc}</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
 
-    st.divider()
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown("**📂 지원 카테고리**")
-        for v in CATEGORIES.values():
-            st.markdown(f"- {v}")
-    with col2:
-        st.markdown("**✍️ 글 유형**")
-        for v in POST_TYPES.values():
-            st.markdown(f"- {v}")
+    # ── 글 유형 퀵메뉴 ─────────────────────────────────────────
+    st.markdown(
+        '<div style="margin:18px 0 8px;">'
+        '<span style="font-size:.72rem;font-weight:700;color:#03C75A;letter-spacing:2px;">▶ 빠른 시작 — 글 유형 선택</span>'
+        '</div>', unsafe_allow_html=True,
+    )
+    st.caption("글 유형을 먼저 선택하면 사이드바 설정이 자동 적용됩니다. 이후 키워드와 URL을 입력하세요.")
+
+    qc1, qc2, qc3, qc4 = st.columns(4)
+    QUICK_TYPES = [
+        ("review",  "📝", "리뷰형",      "솔직 사용 후기 · 장단점 분석",    "#e8f5e9", "#2e7d32"),
+        ("compare", "⚖️", "비교형",      "2~3개 제품 비교 · 추천",           "#e3f2fd", "#1565c0"),
+        ("info",    "💡", "정보전달형",  "구매 전 핵심 정보 · 선택 가이드",  "#fff8e1", "#f57f17"),
+        ("howto",   "🛠️", "활용법형",    "사용 팁 & 노하우 · 활용 가이드",   "#f3e5f5", "#6a1b9a"),
+    ]
+    for col, (ptype, icon, name, desc, bg, accent) in zip([qc1, qc2, qc3, qc4], QUICK_TYPES):
+        with col:
+            is_sel = st.session_state.post_type == ptype
+            border = f"2.5px solid {accent}" if is_sel else "2px solid #e8e8e8"
+            bg_use = bg if is_sel else "#fafafa"
+            st.markdown(
+                f'<div style="background:{bg_use};border:{border};border-radius:14px;'
+                f'padding:16px 12px;text-align:center;min-height:116px;">'
+                f'<div style="font-size:1.7rem;margin-bottom:6px;">{icon}</div>'
+                f'<div style="font-size:.83rem;font-weight:800;'
+                f'color:{accent if is_sel else "#1a1a1a"};margin-bottom:4px;">{name}</div>'
+                f'<div style="font-size:.71rem;color:#777;line-height:1.4;">{desc}</div>'
+                + (f'<div style="font-size:.67rem;color:{accent};font-weight:700;margin-top:7px;">✓ 선택됨</div>' if is_sel else '')
+                + '</div>',
+                unsafe_allow_html=True,
+            )
+            if st.button(
+                "✓ 선택됨" if is_sel else "선택",
+                key=f"qt_{ptype}",
+                use_container_width=True,
+                type="primary" if is_sel else "secondary",
+            ):
+                st.session_state.post_type = ptype
+                st.rerun()
+
+    # ── 사용 방법 (6단계 가이드) ───────────────────────────────
+    st.markdown(
+        '<div style="margin:20px 0 10px;">'
+        '<span style="font-size:.72rem;font-weight:700;color:#03C75A;letter-spacing:2px;">▶ 사용 방법</span>'
+        '</div>', unsafe_allow_html=True,
+    )
+    g1, g2 = st.columns(2)
+    GUIDE = [
+        ("1", "사이드바에서 🎯 메인 키워드 입력",
+         "블로그 주제 키워드 (예: 에어프라이어 추천, 무선청소기 비교)"),
+        ("2", "🔗 Brand Connect URL 붙여넣기",
+         "네이버 브랜드커넥트 링크 — 없으면 스마트스토어 URL도 가능"),
+        ("3", "위에서 글 유형 선택",
+         "리뷰/비교/정보전달/활용법 (비교형은 경쟁제품도 검색 가능)"),
+        ("4", "➡️ 제품 검색 시작 클릭",
+         "AI가 키워드 분석 → 제품 카드 표시 → 클릭 한 번으로 정확한 최저가 적용"),
+        ("5", "✅ 이 정보로 블로그 글 작성하기",
+         "Claude AI가 30초~1분 내 SEO 최적화 블로그 글 완성"),
+        ("6", "HTML / 텍스트 복사해서 업로드",
+         "HTML 코드 복사 → 네이버 블로그 HTML 편집 모드에 붙여넣기 완료"),
+    ]
+    for i, (num, title, desc) in enumerate(GUIDE):
+        with (g1 if i % 2 == 0 else g2):
+            st.markdown(
+                f'<div style="display:flex;gap:11px;align-items:flex-start;margin-bottom:13px;">'
+                f'<div style="min-width:27px;height:27px;background:#03C75A;color:#fff;'
+                f'border-radius:50%;display:flex;align-items:center;justify-content:center;'
+                f'font-size:.72rem;font-weight:800;flex-shrink:0;">{num}</div>'
+                f'<div><div style="font-size:.81rem;font-weight:700;color:#111;margin-bottom:2px;">{title}</div>'
+                f'<div style="font-size:.73rem;color:#666;line-height:1.45;">{desc}</div></div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
 
 
 # ════════════════════════════════════════════════
