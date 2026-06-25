@@ -591,15 +591,19 @@ elif st.session_state.step == 1:
                 st.session_state.search_results = []
                 st.session_state.search_query = search_q
 
-            # 4. 경쟁사 자동 탐색 (비교형일 때만)
+            # 4. 경쟁사 자동 탐색 + 1위 자동 선택 (비교형일 때만)
             if st.session_state.post_type == "compare":
                 comp_queries = suggest_competitor_queries(
                     anthropic_key, st.session_state.keyword, search_q
                 )
                 for ci, cq in enumerate(comp_queries[:2]):
                     try:
-                        st.session_state[f"comp_sr_{ci}"] = scraper.search_products(cq, top_n=8)
+                        results = scraper.search_products(cq, top_n=8)
+                        st.session_state[f"comp_sr_{ci}"] = results
                         st.session_state[f"comp_sq_{ci}"] = cq
+                        # 검색 결과 1위 자동 선택
+                        if results:
+                            st.session_state[f"comp_sel_{ci}"] = dict(results[0])
                     except Exception:
                         st.session_state[f"comp_sr_{ci}"] = []
                         st.session_state[f"comp_sq_{ci}"] = cq
@@ -703,11 +707,11 @@ elif st.session_state.step == 1:
                         new_specs[k.strip()] = v.strip()
             info["specs"] = new_specs
 
-    # ── 경쟁 제품 검색 (비교형만) ─────────────────────────
+    # ── 경쟁 제품 교차검증 (비교형만) ──────────────────────
     if st.session_state.post_type == "compare":
         st.divider()
-        st.markdown("#### 2. 경쟁 제품 선택 (비교형)")
-        st.caption("비교할 경쟁 제품을 검색해서 선택하세요. 최대 2개까지 선택 가능합니다.")
+        st.markdown("#### 2. 경쟁 제품 교차검증")
+        st.caption("AI가 자동으로 찾아 선택했습니다. 다른 제품으로 교체하려면 카드를 클릭하세요.")
 
         for ci in range(2):
             sr_key  = f"comp_sr_{ci}"
@@ -715,34 +719,38 @@ elif st.session_state.step == 1:
             sel_key = f"comp_sel_{ci}"
             label   = f"경쟁 제품 {ci + 1}"
 
-            st.markdown(f"**{label}**")
-            cq2, cb2 = st.columns([5, 1])
-            with cq2:
-                cq_val = st.text_input(
-                    label, label_visibility="collapsed",
-                    value=st.session_state.get(sq_key, ""),
-                    placeholder="예) LG 에어프라이어 6L",
-                    key=f"comp_q_{ci}",
-                )
-            with cb2:
-                if st.button("🔍 검색", key=f"comp_btn_{ci}", use_container_width=True):
-                    with st.spinner(f"{label} 검색 중..."):
-                        st.session_state[sr_key]  = scraper.search_products(cq_val, top_n=8)
-                        st.session_state[sq_key]  = cq_val
-                        st.session_state[sel_key] = None
-                    st.rerun()
-
-            comp_results = st.session_state.get(sr_key, [])
-            if comp_results:
-                render_product_cards(comp_results, f"c{ci}", sel_key)
-
             sel = st.session_state.get(sel_key)
+            comp_results = st.session_state.get(sr_key, [])
+
+            # 자동 선택된 제품 표시
             if sel:
                 st.success(
-                    f"✅ {label} 선택됨: **{sel.get('name', '')}**  |  "
+                    f"🤖 **{label} 자동 선택**: {sel.get('name', '')}  |  "
                     f"최저가: **{sel.get('price', '')}원**"
                     + (f"  |  ⭐{sel.get('rating', '')} ({sel.get('review_count', '')}개)" if sel.get("rating") else "")
                 )
+            else:
+                st.warning(f"⚠️ {label} — 자동 검색 결과 없음. 직접 검색해주세요.")
+
+            # 교체 expander (필요할 때만 열기)
+            with st.expander(f"🔄 {label} 교체하기", expanded=not bool(sel)):
+                cq2, cb2 = st.columns([5, 1])
+                with cq2:
+                    cq_val = st.text_input(
+                        label, label_visibility="collapsed",
+                        value=st.session_state.get(sq_key, ""),
+                        placeholder="예) LG 에어프라이어 6L",
+                        key=f"comp_q_{ci}",
+                    )
+                with cb2:
+                    if st.button("🔍 검색", key=f"comp_btn_{ci}", use_container_width=True):
+                        with st.spinner(f"{label} 검색 중..."):
+                            st.session_state[sr_key]  = scraper.search_products(cq_val, top_n=8)
+                            st.session_state[sq_key]  = cq_val
+                            st.session_state[sel_key] = None
+                        st.rerun()
+                if comp_results:
+                    render_product_cards(comp_results, f"c{ci}", sel_key)
 
     # ── 서브키워드 ────────────────────────────────────────
     if st.session_state.sub_keywords:
