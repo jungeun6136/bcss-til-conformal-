@@ -566,15 +566,24 @@ elif st.session_state.step == 1:
                 slug = st.session_state.brand_url.rstrip("/").split("/")[-1]
                 product_name_from_url = _re.sub(r"[_\-]", " ", slug).strip() or "제품"
 
-            # 2. 키워드 API → 검색량 순위로 메인키워드 자동 확정
+            # 2. 키워드 API → 제품과 관련 있는 키워드 중 검색량 최고 = 메인키워드
             researcher = NaverKeywordResearch(naver_key, naver_secret, naver_customer)
             try:
                 raw_kws = researcher.get_related_keywords(product_name_from_url, top_n=30)
                 if raw_kws:
-                    # 검색량 1위 = 메인 키워드
-                    st.session_state.keyword = raw_kws[0]["keyword"]
-                    # 검색량 상위 8개 = 서브 키워드 (메인 제외)
-                    st.session_state.sub_keywords = researcher.select_sub_keywords(raw_kws[1:], count=8)
+                    # 제품명 구성 단어 추출 (2자 이상)
+                    prod_words = [w for w in product_name_from_url.split() if len(w) >= 2]
+                    # 제품명 단어 중 하나라도 포함 + 4자 이상인 키워드 우선 선택
+                    relevant = [
+                        k for k in raw_kws
+                        if len(k["keyword"]) >= 4
+                        and any(w in k["keyword"] for w in prod_words)
+                    ]
+                    best = relevant[0] if relevant else raw_kws[0]
+                    st.session_state.keyword = best["keyword"]
+                    # 서브키워드: 메인 제외한 관련 키워드 상위 8개
+                    rest = [k for k in raw_kws if k["keyword"] != best["keyword"]]
+                    st.session_state.sub_keywords = researcher.select_sub_keywords(rest, count=8)
                 else:
                     st.session_state.keyword = product_name_from_url
                     st.session_state.sub_keywords = []
@@ -619,6 +628,17 @@ elif st.session_state.step == 1:
             "현재는 **직접 입력 폼**으로 제품 정보를 입력할 수 있습니다.",
             icon="ℹ️",
         )
+
+    # ── 메인 키워드 교차검증 ─────────────────────────────
+    kw_col, _ = st.columns([3, 1])
+    with kw_col:
+        new_kw = st.text_input(
+            "🎯 메인 키워드 (자동 추출 — 수정 가능)",
+            value=st.session_state.keyword,
+            key="kw_override",
+        )
+        if new_kw != st.session_state.keyword:
+            st.session_state.keyword = new_kw
 
     # ── 메인 제품 검색 ────────────────────────────────────
     st.markdown("#### 1. 메인 제품 선택")
