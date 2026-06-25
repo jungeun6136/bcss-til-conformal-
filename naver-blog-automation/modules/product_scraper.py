@@ -520,17 +520,35 @@ class ProductScraper:
             final_url = self._follow_redirects(url)
             domain = urlparse(final_url).netloc
             if "smartstore.naver.com" in domain or "brand.naver.com" in domain:
-                return self._scrape_smartstore(final_url)
+                result = self._scrape_smartstore(final_url)
             elif "coupang.com" in domain:
-                return self._scrape_coupang(final_url)
+                result = self._scrape_coupang(final_url)
             else:
-                return self._scrape_og(final_url)
+                result = self._scrape_og(final_url)
+            # 제품명이 비어있으면 OG title / <title> 태그로 보완
+            if not result.get("name"):
+                try:
+                    resp = self.session.get(final_url, timeout=10)
+                    soup = BeautifulSoup(resp.text, "lxml")
+                    og_title = (soup.find("meta", property="og:title") or {}).get("content", "")
+                    page_title = soup.title.string.strip() if soup.title else ""
+                    # 네이버 브랜드스토어 title 형식: "제품명 : 브랜드 스토어" → 앞부분 추출
+                    for raw in [og_title, page_title]:
+                        if raw:
+                            name = re.split(r"[:\|｜–—]", raw)[0].strip()
+                            if name and len(name) > 3:
+                                result["name"] = name
+                                break
+                except Exception:
+                    pass
+            return result
         except Exception:
             return self._empty_product("")
 
     def _follow_redirects(self, url: str) -> str:
         try:
-            resp = self.session.head(url, allow_redirects=True, timeout=8)
+            # HEAD를 막는 서버가 많아 GET으로 리다이렉트 추적
+            resp = self.session.get(url, allow_redirects=True, timeout=10)
             return resp.url
         except Exception:
             return url

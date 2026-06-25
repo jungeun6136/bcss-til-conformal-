@@ -569,8 +569,8 @@ elif st.session_state.step == 1:
                 try:
                     # brand.naver.com/[브랜드슬러그]/products/[ID] 구조에서 브랜드슬러그 사용
                     parts = st.session_state.brand_url.rstrip("/").split("/")
-                    # 도메인 제외, path만
-                    path_parts = [p for p in parts if p and "naver.com" not in p and "http" not in p]
+                    # 도메인(점 포함)·http 제외, 순수 path 세그먼트만
+                    path_parts = [p for p in parts if p and "." not in p and "http" not in p]
                     # ID처럼 보이지 않는 첫 번째 세그먼트를 힌트로 사용
                     hint = next((p for p in path_parts if not _looks_like_id(p)), "")
                     import re as _re
