@@ -183,7 +183,7 @@ class ProductScraper:
         try:
             url = f"https://search.shopping.naver.com/search/all?query={quote(query)}&sort=price_asc"
             resp = self.session.get(url, timeout=12)
-            soup = BeautifulSoup(resp.text, "lxml")
+            soup = BeautifulSoup(resp.content, "lxml")
             tag = soup.find("script", {"id": "__NEXT_DATA__"})
             if not tag:
                 return []
@@ -384,7 +384,7 @@ class ProductScraper:
         try:
             url = f"https://search.shopping.naver.com/search/all?query={quote(query)}&sort=price_asc"
             resp = self.session.get(url, timeout=14)
-            soup = BeautifulSoup(resp.text, "lxml")
+            soup = BeautifulSoup(resp.content, "lxml")
 
             # __NEXT_DATA__ 우선 시도
             nd_result = self._parse_next_data_search(soup, url)
@@ -529,7 +529,7 @@ class ProductScraper:
             if not result.get("name"):
                 try:
                     resp = self.session.get(final_url, timeout=10)
-                    soup = BeautifulSoup(resp.text, "lxml")
+                    soup = BeautifulSoup(resp.content, "lxml")
                     og_title = (soup.find("meta", property="og:title") or {}).get("content", "")
                     page_title = soup.title.string.strip() if soup.title else ""
                     # 네이버 브랜드스토어 title 형식: "제품명 : 브랜드 스토어" → 앞부분 추출
@@ -557,7 +557,7 @@ class ProductScraper:
     def _scrape_smartstore(self, url: str) -> Dict:
         try:
             resp = self.session.get(url, timeout=12)
-            soup = BeautifulSoup(resp.text, "lxml")
+            soup = BeautifulSoup(resp.content, "lxml")
 
             # __NEXT_DATA__ 에서 상품 상세 정보 파싱
             nd_data = self._parse_smartstore_next_data(soup)
@@ -779,7 +779,7 @@ class ProductScraper:
     def _scrape_coupang(self, url: str) -> Dict:
         try:
             resp = self.session.get(url, timeout=10)
-            soup = BeautifulSoup(resp.text, "lxml")
+            soup = BeautifulSoup(resp.content, "lxml")
             name = self._text(soup.select_one("h2.prod-buy-header__title, [class*='product-title']"))
 
             prices = []
@@ -820,7 +820,7 @@ class ProductScraper:
     def _scrape_og(self, url: str) -> Dict:
         try:
             resp = self.session.get(url, timeout=10)
-            soup = BeautifulSoup(resp.text, "lxml")
+            soup = BeautifulSoup(resp.content, "lxml")
             name = (soup.find("meta", property="og:title") or {}).get("content", "")
             desc = (soup.find("meta", property="og:description") or {}).get("content", "")
             img = (soup.find("meta", property="og:image") or {}).get("content", "")
