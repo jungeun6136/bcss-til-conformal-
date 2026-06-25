@@ -143,6 +143,25 @@ def render_kw_chips(kws):
                 unsafe_allow_html=True)
 
 
+def suggest_competitor_queries(api_key: str, keyword: str, product_name: str) -> list:
+    """Claude Haiku로 경쟁 제품 검색어 2개 자동 생성"""
+    try:
+        import anthropic, json, re
+        client = anthropic.Anthropic(api_key=api_key)
+        msg = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=120,
+            messages=[{"role": "user", "content":
+                f"제품명: {product_name}\n키워드: {keyword}\n\n"
+                "이 제품과 경쟁하는 다른 브랜드의 유사 제품 네이버 검색어 2개를 "
+                "JSON 배열로만 출력하세요. 예: [\"LG 인덕션 추천\", \"쿠쿠 인덕션\"]"}]
+        )
+        m = re.search(r'\[.*?\]', msg.content[0].text, re.DOTALL)
+        return json.loads(m.group()) if m else []
+    except Exception:
+        return []
+
+
 def render_product_cards(results: list, key_prefix: str, sel_key: str):
     """상품 목록을 카드 그리드로 표시. 선택 시 session_state[sel_key]에 저장."""
     COLS = 4
@@ -522,23 +541,48 @@ elif st.session_state.step == 1:
     naver_csec = os.getenv("NAVER_CLIENT_SECRET", "")
     scraper = ProductScraper(naver_cid, naver_csec)
 
-    # ── 키워드 리서치 + 자동 제품검색 (최초 1회) ─────────────
+    # ── 전체 자동화 초기화 (최초 1회) ─────────────────────────
     if not st.session_state.kw_researched:
-        with st.spinner("🔑 키워드 분석 + 제품 검색 중..."):
+        with st.spinner("🤖 키워드 분석 · 제품 검색 · 경쟁사 자동 탐색 중..."):
+
+            # 1. 키워드 리서치
             try:
                 researcher = NaverKeywordResearch(naver_key, naver_secret, naver_customer)
                 raw_kws = researcher.get_related_keywords(st.session_state.keyword, top_n=30)
                 st.session_state.sub_keywords = researcher.select_sub_keywords(raw_kws, count=8)
             except Exception:
                 st.session_state.sub_keywords = []
-            # 진입 시 자동으로 키워드 검색
-            kw = st.session_state.keyword
+
+            # 2. Brand URL → 제품명 추출 (검색 정교화)
+            search_q = st.session_state.keyword
+            if st.session_state.brand_url:
+                try:
+                    url_data = scraper._scrape_from_url(st.session_state.brand_url)
+                    extracted = url_data.get("name", "").strip()
+                    if extracted and len(extracted) > 3 and extracted != st.session_state.keyword:
+                        search_q = extracted
+                except Exception:
+                    pass
+
+            # 3. 메인 제품 자동 검색
             try:
-                auto_results = scraper.search_products(kw, top_n=8)
-                st.session_state.search_results = auto_results
-                st.session_state.search_query = kw
+                st.session_state.search_results = scraper.search_products(search_q, top_n=8)
+                st.session_state.search_query = search_q
             except Exception:
                 st.session_state.search_results = []
+                st.session_state.search_query = search_q
+
+            # 4. 경쟁사 자동 탐색 (비교형일 때만)
+            if st.session_state.post_type == "compare":
+                comp_queries = suggest_competitor_queries(anthropic_key, st.session_state.keyword, search_q)
+                for ci, cq in enumerate(comp_queries[:2]):
+                    try:
+                        st.session_state[f"comp_sr_{ci}"] = scraper.search_products(cq, top_n=8)
+                        st.session_state[f"comp_sq_{ci}"] = cq
+                    except Exception:
+                        st.session_state[f"comp_sr_{ci}"] = []
+                        st.session_state[f"comp_sq_{ci}"] = cq
+
         st.session_state.kw_researched = True
         st.rerun()
 
