@@ -560,11 +560,23 @@ elif st.session_state.step == 1:
                 except Exception:
                     pass
 
-            # URL에서 제품명 추출 실패 시 URL 경로에서 힌트 파싱
-            if not product_name_from_url and st.session_state.brand_url:
-                import re as _re
-                slug = st.session_state.brand_url.rstrip("/").split("/")[-1]
-                product_name_from_url = _re.sub(r"[_\-]", " ", slug).strip() or "제품"
+            # URL에서 제품명 추출 실패 또는 ID값이면 URL 경로에서 브랜드명 파싱
+            def _looks_like_id(s: str) -> bool:
+                """영숫자만 있고 한글 없으면 제품 ID로 판단"""
+                return bool(s) and s.isalnum() and not any('가' <= c <= '힣' for c in s)
+
+            if not product_name_from_url or _looks_like_id(product_name_from_url):
+                try:
+                    # brand.naver.com/[브랜드슬러그]/products/[ID] 구조에서 브랜드슬러그 사용
+                    parts = st.session_state.brand_url.rstrip("/").split("/")
+                    # 도메인 제외, path만
+                    path_parts = [p for p in parts if p and "naver.com" not in p and "http" not in p]
+                    # ID처럼 보이지 않는 첫 번째 세그먼트를 힌트로 사용
+                    hint = next((p for p in path_parts if not _looks_like_id(p)), "")
+                    import re as _re
+                    product_name_from_url = _re.sub(r"[_\-]", " ", hint).strip() or "제품"
+                except Exception:
+                    product_name_from_url = "제품"
 
             # 2. 키워드 API → 제품과 관련 있는 키워드 중 검색량 최고 = 메인키워드
             researcher = NaverKeywordResearch(naver_key, naver_secret, naver_customer)

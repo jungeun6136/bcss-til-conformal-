@@ -692,12 +692,9 @@ class ProductScraper:
                 elif isinstance(img_obj, dict):
                     images.append(img_obj.get("url", "") or img_obj.get("imageUrl", ""))
 
-            if not display_price:
-                return {}
-
             return {
                 "name": name,
-                "price": _fmt(display_price),
+                "price": _fmt(display_price) if display_price else "",
                 "specs": specs,
                 "images": [i for i in images if i][:8],
                 "rating": rating,
