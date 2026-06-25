@@ -642,15 +642,30 @@ elif st.session_state.step == 1:
         )
 
     # ── 메인 키워드 교차검증 ─────────────────────────────
+    # 추출 실패 판단: 제품명이 비어있거나 기본값이거나 한글이 없으면 실패
+    _kw_failed = (
+        not st.session_state.keyword
+        or st.session_state.keyword in ("제품", "products", "")
+        or not any('가' <= c <= '힣' for c in st.session_state.keyword)
+    )
+    if _kw_failed:
+        st.warning(
+            "⚠️ URL에서 제품명을 자동으로 추출하지 못했습니다. "
+            "**아래 키워드 칸에 직접 제품명을 입력 후 검색하세요.** "
+            "(예: 로보락 S8 Pro, 삼성 로봇청소기)",
+            icon="✏️",
+        )
     kw_col, _ = st.columns([3, 1])
     with kw_col:
         new_kw = st.text_input(
-            "🎯 메인 키워드 (자동 추출 — 수정 가능)",
-            value=st.session_state.keyword,
+            "🎯 메인 키워드" + (" ← 직접 입력 필요" if _kw_failed else " (자동 추출 — 수정 가능)"),
+            value=st.session_state.keyword if not _kw_failed else "",
             key="kw_override",
+            placeholder="예) 로보락 S8 Pro 로봇청소기" if _kw_failed else "",
         )
-        if new_kw != st.session_state.keyword:
+        if new_kw and new_kw != st.session_state.keyword:
             st.session_state.keyword = new_kw
+            st.session_state.search_query = new_kw
 
     # ── 메인 제품 검색 ────────────────────────────────────
     st.markdown("#### 1. 메인 제품 선택")

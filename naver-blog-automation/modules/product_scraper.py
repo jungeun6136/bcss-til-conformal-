@@ -31,13 +31,18 @@ NOISE_PATTERNS = [
 
 
 def _find_product_name(obj, depth: int = 0) -> str:
-    """JSON 트리를 재귀적으로 탐색해 productName / name 필드 추출"""
+    """JSON 트리를 재귀적으로 탐색해 productName / goodsName 필드 추출.
+    반드시 한글 포함 + 5자 이상이어야 유효한 제품명으로 인정."""
     if depth > 8:
         return ""
     if isinstance(obj, dict):
-        for key in ("productName", "name", "goodsName", "itemName"):
+        # 'name' 같은 범용 키는 제외 — productName / goodsName만 신뢰
+        for key in ("productName", "goodsName", "itemName", "prodName"):
             val = obj.get(key, "")
-            if isinstance(val, str) and len(val) > 3 and not any(n in val for n in NOISE_PATTERNS):
+            if (isinstance(val, str)
+                    and len(val) >= 5
+                    and any('가' <= c <= '힣' for c in val)  # 한글 포함
+                    and not any(n in val for n in NOISE_PATTERNS)):
                 return val.strip()
         for v in obj.values():
             found = _find_product_name(v, depth + 1)
