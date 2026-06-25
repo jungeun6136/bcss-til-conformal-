@@ -545,9 +545,18 @@ elif st.session_state.step == 1:
     naver_csec = os.getenv("NAVER_CLIENT_SECRET", "")
     scraper = ProductScraper(naver_cid, naver_csec)
 
+    def _is_valid_product_name(s: str) -> bool:
+        """실제 제품명인지 판단: 한글 포함 + 5자 이상 + 기본값 아님"""
+        return (
+            bool(s)
+            and len(s) >= 5
+            and any('가' <= c <= '힣' for c in s)
+            and s not in ("제품", "상품", "이미지", "products")
+        )
+
     # ── 전체 자동화 초기화 (최초 1회) ─────────────────────────
     if not st.session_state.kw_researched:
-        with st.spinner("🤖 URL 분석 · 키워드 리서치 · 제품 검색 · 경쟁사 탐색 중..."):
+        with st.spinner("🤖 URL 분석 중..."):
 
             # 1. Brand URL → 제품명 추출
             product_name_from_url = ""
@@ -555,79 +564,65 @@ elif st.session_state.step == 1:
                 try:
                     url_data = scraper._scrape_from_url(st.session_state.brand_url)
                     extracted = url_data.get("name", "").strip()
-                    if extracted and len(extracted) > 3:
+                    if _is_valid_product_name(extracted):
                         product_name_from_url = extracted
                 except Exception:
                     pass
 
-            # URL에서 제품명 추출 실패 또는 ID값이면 URL 경로에서 브랜드명 파싱
-            def _looks_like_id(s: str) -> bool:
-                """영숫자만 있고 한글 없으면 제품 ID로 판단"""
-                return bool(s) and s.isalnum() and not any('가' <= c <= '힣' for c in s)
-
-            if not product_name_from_url or _looks_like_id(product_name_from_url):
+        # 제품명 추출 성공 → 자동 분석 진행
+        if product_name_from_url:
+            with st.spinner("🤖 키워드 리서치 · 제품 검색 · 경쟁사 탐색 중..."):
+                # 2. 키워드 API
+                researcher = NaverKeywordResearch(naver_key, naver_secret, naver_customer)
                 try:
-                    # brand.naver.com/[브랜드슬러그]/products/[ID] 구조에서 브랜드슬러그 사용
-                    parts = st.session_state.brand_url.rstrip("/").split("/")
-                    # 도메인(점 포함)·http 제외, 순수 path 세그먼트만
-                    path_parts = [p for p in parts if p and "." not in p and "http" not in p]
-                    # ID처럼 보이지 않는 첫 번째 세그먼트를 힌트로 사용
-                    hint = next((p for p in path_parts if not _looks_like_id(p)), "")
-                    import re as _re
-                    product_name_from_url = _re.sub(r"[_\-]", " ", hint).strip() or "제품"
+                    raw_kws = researcher.get_related_keywords(product_name_from_url, top_n=30)
+                    if raw_kws:
+                        prod_words = [w for w in product_name_from_url.split() if len(w) >= 2]
+                        relevant = [
+                            k for k in raw_kws
+                            if len(k["keyword"]) >= 4
+                            and any(w in k["keyword"] for w in prod_words)
+                        ]
+                        best = relevant[0] if relevant else raw_kws[0]
+                        st.session_state.keyword = best["keyword"]
+                        rest = [k for k in raw_kws if k["keyword"] != best["keyword"]]
+                        st.session_state.sub_keywords = researcher.select_sub_keywords(rest, count=8)
+                    else:
+                        st.session_state.keyword = product_name_from_url
+                        st.session_state.sub_keywords = []
                 except Exception:
-                    product_name_from_url = "제품"
-
-            # 2. 키워드 API → 제품과 관련 있는 키워드 중 검색량 최고 = 메인키워드
-            researcher = NaverKeywordResearch(naver_key, naver_secret, naver_customer)
-            try:
-                raw_kws = researcher.get_related_keywords(product_name_from_url, top_n=30)
-                if raw_kws:
-                    # 제품명 구성 단어 추출 (2자 이상)
-                    prod_words = [w for w in product_name_from_url.split() if len(w) >= 2]
-                    # 제품명 단어 중 하나라도 포함 + 4자 이상인 키워드 우선 선택
-                    relevant = [
-                        k for k in raw_kws
-                        if len(k["keyword"]) >= 4
-                        and any(w in k["keyword"] for w in prod_words)
-                    ]
-                    best = relevant[0] if relevant else raw_kws[0]
-                    st.session_state.keyword = best["keyword"]
-                    # 서브키워드: 메인 제외한 관련 키워드 상위 8개
-                    rest = [k for k in raw_kws if k["keyword"] != best["keyword"]]
-                    st.session_state.sub_keywords = researcher.select_sub_keywords(rest, count=8)
-                else:
                     st.session_state.keyword = product_name_from_url
                     st.session_state.sub_keywords = []
-            except Exception:
-                st.session_state.keyword = product_name_from_url
-                st.session_state.sub_keywords = []
 
-            # 3. 메인 제품 자동 검색 (제품명으로)
-            search_q = product_name_from_url
-            try:
-                st.session_state.search_results = scraper.search_products(search_q, top_n=8)
-                st.session_state.search_query = search_q
-            except Exception:
-                st.session_state.search_results = []
-                st.session_state.search_query = search_q
+                # 3. 메인 제품 검색
+                try:
+                    st.session_state.search_results = scraper.search_products(product_name_from_url, top_n=8)
+                    st.session_state.search_query = product_name_from_url
+                except Exception:
+                    st.session_state.search_results = []
+                    st.session_state.search_query = product_name_from_url
 
-            # 4. 경쟁사 자동 탐색 + 1위 자동 선택 (비교형일 때만)
-            if st.session_state.post_type == "compare":
-                comp_queries = suggest_competitor_queries(
-                    anthropic_key, st.session_state.keyword, search_q
-                )
-                for ci, cq in enumerate(comp_queries[:2]):
-                    try:
-                        results = scraper.search_products(cq, top_n=8)
-                        st.session_state[f"comp_sr_{ci}"] = results
-                        st.session_state[f"comp_sq_{ci}"] = cq
-                        # 검색 결과 1위 자동 선택
-                        if results:
-                            st.session_state[f"comp_sel_{ci}"] = dict(results[0])
-                    except Exception:
-                        st.session_state[f"comp_sr_{ci}"] = []
-                        st.session_state[f"comp_sq_{ci}"] = cq
+                # 4. 경쟁사 자동 탐색 (비교형)
+                if st.session_state.post_type == "compare":
+                    comp_queries = suggest_competitor_queries(
+                        anthropic_key, st.session_state.keyword, product_name_from_url
+                    )
+                    for ci, cq in enumerate(comp_queries[:2]):
+                        try:
+                            results = scraper.search_products(cq, top_n=8)
+                            st.session_state[f"comp_sr_{ci}"] = results
+                            st.session_state[f"comp_sq_{ci}"] = cq
+                            if results:
+                                st.session_state[f"comp_sel_{ci}"] = dict(results[0])
+                        except Exception:
+                            st.session_state[f"comp_sr_{ci}"] = []
+                            st.session_state[f"comp_sq_{ci}"] = cq
+
+        else:
+            # 제품명 추출 실패 → 키워드/검색 없이 대기, 사용자 직접 입력 유도
+            st.session_state.keyword = ""
+            st.session_state.search_results = []
+            st.session_state.search_query = ""
 
         st.session_state.kw_researched = True
         st.rerun()
@@ -641,31 +636,45 @@ elif st.session_state.step == 1:
             icon="ℹ️",
         )
 
-    # ── 메인 키워드 교차검증 ─────────────────────────────
-    # 추출 실패 판단: 제품명이 비어있거나 기본값이거나 한글이 없으면 실패
-    _kw_failed = (
-        not st.session_state.keyword
-        or st.session_state.keyword in ("제품", "products", "")
-        or not any('가' <= c <= '힣' for c in st.session_state.keyword)
-    )
-    if _kw_failed:
-        st.warning(
-            "⚠️ URL에서 제품명을 자동으로 추출하지 못했습니다. "
-            "**아래 키워드 칸에 직접 제품명을 입력 후 검색하세요.** "
-            "(예: 로보락 S8 Pro, 삼성 로봇청소기)",
+    # ── 메인 키워드 입력 / 교차검증 ─────────────────────────
+    _kw_ok = _is_valid_product_name(st.session_state.keyword)
+    if not _kw_ok:
+        st.error(
+            "⚠️ URL에서 제품명을 자동으로 가져오지 못했습니다.  \n"
+            "**아래에 제품명을 직접 입력하고 Enter를 누르면 자동으로 검색됩니다.**",
             icon="✏️",
         )
     kw_col, _ = st.columns([3, 1])
     with kw_col:
         new_kw = st.text_input(
-            "🎯 메인 키워드" + (" ← 직접 입력 필요" if _kw_failed else " (자동 추출 — 수정 가능)"),
-            value=st.session_state.keyword if not _kw_failed else "",
+            "🎯 제품명 / 메인 키워드" + (" (자동 추출 — 수정 가능)" if _kw_ok else " ← 직접 입력"),
+            value=st.session_state.keyword if _kw_ok else "",
             key="kw_override",
-            placeholder="예) 로보락 S8 Pro 로봇청소기" if _kw_failed else "",
+            placeholder="" if _kw_ok else "예) 로보락 S8 Pro 로봇청소기",
         )
-        if new_kw and new_kw != st.session_state.keyword:
+    # 입력값이 유효한 제품명이면 키워드 + 검색 업데이트
+    if _is_valid_product_name(new_kw) and new_kw != st.session_state.keyword:
+        with st.spinner("🔍 키워드 분석 · 제품 검색 중..."):
             st.session_state.keyword = new_kw
             st.session_state.search_query = new_kw
+            try:
+                researcher = NaverKeywordResearch(naver_key, naver_secret, naver_customer)
+                raw_kws = researcher.get_related_keywords(new_kw, top_n=30)
+                if raw_kws:
+                    prod_words = [w for w in new_kw.split() if len(w) >= 2]
+                    relevant = [k for k in raw_kws if len(k["keyword"]) >= 4
+                                and any(w in k["keyword"] for w in prod_words)]
+                    best = relevant[0] if relevant else raw_kws[0]
+                    st.session_state.keyword = best["keyword"]
+                    rest = [k for k in raw_kws if k["keyword"] != best["keyword"]]
+                    st.session_state.sub_keywords = researcher.select_sub_keywords(rest, count=8)
+            except Exception:
+                pass
+            try:
+                st.session_state.search_results = scraper.search_products(new_kw, top_n=8)
+            except Exception:
+                st.session_state.search_results = []
+        st.rerun()
 
     # ── 메인 제품 검색 ────────────────────────────────────
     st.markdown("#### 1. 메인 제품 선택")
