@@ -51,17 +51,23 @@ st.markdown("""
                   padding:0.6rem 0.8rem; border-radius:4px; margin:4px 0; }
     .err-box    { background:#fff3f3; border:1px solid #ffcdd2; border-radius:10px;
                   padding:1.2rem; text-align:center; }
-    /* 전역 여백 축소 */
-    .block-container { padding-top:1rem !important; padding-bottom:1rem !important; }
+    /* 전역 여백 */
+    .block-container { padding-top:2.5rem !important; padding-bottom:1rem !important; }
     section[data-testid="stSidebar"] .block-container { padding-top:0.5rem !important; }
     div[data-testid="stVerticalBlock"] > div { gap:0.3rem; }
     hr { margin:0.5rem 0 !important; }
+    /* 랜딩 페이지 전용 */
+    .home-cta > div > button { font-size:1.1rem !important; height:3rem !important; }
+    .type-tile { border-radius:16px; padding:18px 8px; text-align:center;
+                 cursor:pointer; transition:all .15s; }
+    .type-tile:hover { transform:translateY(-2px); box-shadow:0 6px 20px rgba(0,0,0,.1); }
 </style>
 """, unsafe_allow_html=True)
 
 
 # ── 세션 상태 초기화 ─────────────────────────────────
 DEFAULTS = {
+    "page": "home",      # "home"=랜딩 "tool"=도구
     "step": 0,           # 0=입력 1=제품확인 2=글생성중 3=완료 -1=오류
     "keyword": "",
     "brand_url": "",
@@ -120,6 +126,16 @@ def step_bar(current: int):
             html += f'<div class="step-line {line_cls}"></div>'
     html += "</div>"
     st.markdown(html, unsafe_allow_html=True)
+
+
+def show_tool_header():
+    st.markdown('<div class="main-title">✍️ 네이버 블로그 자동화</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="sub-title">Brand Connect URL + 키워드 → 완성된 블로그 글 + 이미지 자동 생성</div>',
+        unsafe_allow_html=True,
+    )
+    step_bar(st.session_state.step if st.session_state.step >= 0 else 0)
+    st.divider()
 
 
 def render_kw_chips(kws):
@@ -186,141 +202,149 @@ def render_product_cards(results: list, key_prefix: str, sel_key: str):
 
 # ── 사이드바 ─────────────────────────────────────────
 with st.sidebar:
-    st.markdown("### ✍️ 네이버 블로그 자동화")
-    st.markdown("---")
-
-    # 항상 보이는 홈 버튼
-    if st.button("🏠 처음으로 (초기화)", use_container_width=True):
-        reset()
-        st.rerun()
-
-    st.markdown("---")
-
-    # 입력 폼 (step 0일 때만 활성화)
-    disabled = st.session_state.step > 0
-
-    keyword = st.text_input(
-        "🎯 메인 키워드",
-        value=st.session_state.keyword,
-        placeholder="예) 에어프라이어 추천",
-        disabled=disabled,
-    )
-    brand_url = st.text_input(
-        "🔗 Brand Connect URL",
-        value=st.session_state.brand_url,
-        placeholder="https://brandc.naver.com/...",
-        disabled=disabled,
-    )
-    category = st.selectbox(
-        "📂 카테고리",
-        options=list(CATEGORIES.keys()),
-        format_func=lambda x: CATEGORIES[x],
-        index=list(CATEGORIES.keys()).index(st.session_state.category),
-        disabled=disabled,
-    )
-    post_type = st.selectbox(
-        "✍️ 글 유형",
-        options=list(POST_TYPES.keys()),
-        format_func=lambda x: {
-            "review":  "📝 리뷰형 — 솔직 사용 후기",
-            "compare": "⚖️ 비교형 — 제품 비교 분석",
-            "info":    "💡 정보전달형 — 구매 전 핵심 정보",
-            "howto":   "🛠️ 활용법형 — 사용 팁 & 노하우",
-        }[x],
-        index=list(POST_TYPES.keys()).index(st.session_state.post_type),
-        disabled=disabled,
-    )
-
-    st.markdown("---")
-
-    if st.session_state.step == 0:
-        can_go = bool(keyword and brand_url)
-        if st.button("➡️ 제품 검색 시작", type="primary",
-                     use_container_width=True, disabled=not can_go):
-            st.session_state.keyword   = keyword
-            st.session_state.brand_url = brand_url
-            st.session_state.category  = category
-            st.session_state.post_type = post_type
-            st.session_state.search_query = keyword
-            st.session_state.comp_sq_0 = ""
-            st.session_state.comp_sq_1 = ""
-            st.session_state.kw_researched = False
-            st.session_state.step = 1
+    if st.session_state.page == "home":
+        # ── 랜딩 페이지 사이드바 (최소화) ──────────────
+        st.markdown(
+            '<div style="text-align:center;padding:24px 8px 16px;">'
+            '<div style="font-size:2.4rem;">✍️</div>'
+            '<div style="font-size:1.05rem;font-weight:800;color:#03C75A;margin:10px 0 6px;">'
+            '네이버 블로그 자동화</div>'
+            '<div style="font-size:.74rem;color:#aaa;line-height:1.6;">'
+            'AI가 만드는 SEO 최적화<br>블로그 글 자동 생성</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+        st.divider()
+        if st.button("✍️ 글 작성 시작하기", type="primary", use_container_width=True):
+            st.session_state.page = "tool"
             st.rerun()
-        if not can_go:
-            st.caption("키워드와 URL을 입력하면 활성화됩니다.")
+        st.caption("글 유형을 먼저 선택한 후 시작하세요.")
+
+    else:
+        # ── 도구 페이지 사이드바 ─────────────────────
+        st.markdown("### ✍️ 네이버 블로그 자동화")
+        st.markdown("---")
+
+        if st.button("🏠 홈으로 돌아가기", use_container_width=True):
+            reset()
+            st.rerun()
+
+        st.markdown("---")
+
+        disabled = st.session_state.step > 0
+
+        keyword = st.text_input(
+            "🎯 메인 키워드",
+            value=st.session_state.keyword,
+            placeholder="예) 에어프라이어 추천",
+            disabled=disabled,
+        )
+        brand_url = st.text_input(
+            "🔗 Brand Connect URL",
+            value=st.session_state.brand_url,
+            placeholder="https://brandc.naver.com/...",
+            disabled=disabled,
+        )
+        category = st.selectbox(
+            "📂 카테고리",
+            options=list(CATEGORIES.keys()),
+            format_func=lambda x: CATEGORIES[x],
+            index=list(CATEGORIES.keys()).index(st.session_state.category),
+            disabled=disabled,
+        )
+        post_type = st.selectbox(
+            "✍️ 글 유형",
+            options=list(POST_TYPES.keys()),
+            format_func=lambda x: {
+                "review":  "📝 리뷰형 — 솔직 사용 후기",
+                "compare": "⚖️ 비교형 — 제품 비교 분석",
+                "info":    "💡 정보전달형 — 구매 전 핵심 정보",
+                "howto":   "🛠️ 활용법형 — 사용 팁 & 노하우",
+            }[x],
+            index=list(POST_TYPES.keys()).index(st.session_state.post_type),
+            disabled=disabled,
+        )
+
+        st.markdown("---")
+
+        if st.session_state.step == 0:
+            can_go = bool(keyword and brand_url)
+            if st.button("➡️ 제품 검색 시작", type="primary",
+                         use_container_width=True, disabled=not can_go):
+                st.session_state.keyword   = keyword
+                st.session_state.brand_url = brand_url
+                st.session_state.category  = category
+                st.session_state.post_type = post_type
+                st.session_state.search_query = keyword
+                st.session_state.comp_sq_0 = ""
+                st.session_state.comp_sq_1 = ""
+                st.session_state.kw_researched = False
+                st.session_state.step = 1
+                st.rerun()
+            if not can_go:
+                st.caption("키워드와 URL을 입력하면 활성화됩니다.")
 
 
-# ── 메인 영역 ─────────────────────────────────────────
-st.markdown('<div class="main-title">✍️ 네이버 블로그 자동화</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-title">Brand Connect URL + 키워드 → 완성된 블로그 글 + 이미지 자동 생성</div>', unsafe_allow_html=True)
-
+# ── 공통: API 키 확인 ────────────────────────────────
 naver_key, naver_secret, naver_customer, anthropic_key, missing = check_env()
 if missing:
     st.error(f"⚠️ .env 파일에 다음 키가 없습니다: {', '.join(missing)}")
     st.stop()
 
-step_bar(st.session_state.step if st.session_state.step >= 0 else 0)
-st.divider()
-
 
 # ════════════════════════════════════════════════
-# STEP 0: 메인 랜딩 페이지
+# PAGE: HOME — 랜딩 페이지
 # ════════════════════════════════════════════════
-if st.session_state.step == 0:
+if st.session_state.page == "home":
 
-    # ── 히어로 배너 (캔버스 파티클 + 카운트업 애니메이션) ────
+
+    # ── 히어로 배너 ─────────────────────────────────────────
     components.html("""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><style>
 *{margin:0;padding:0;box-sizing:border-box;}
 body{font-family:-apple-system,'Noto Sans KR',sans-serif;
-  background:linear-gradient(135deg,#060d1a 0%,#0d1f3c 45%,#081426 100%);
-  height:290px;overflow:hidden;position:relative;}
+  background:linear-gradient(135deg,#060d1a 0%,#0c1a35 50%,#081426 100%);
+  height:360px;overflow:hidden;position:relative;}
 canvas{position:absolute;top:0;left:0;width:100%;height:100%;}
 .hero{position:relative;z-index:10;display:flex;flex-direction:column;
   align-items:center;justify-content:center;height:100%;padding:20px;text-align:center;}
-.badge{background:rgba(3,199,90,.12);border:1px solid rgba(3,199,90,.35);color:#03C75A;
-  padding:5px 18px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:2.5px;
-  margin-bottom:16px;animation:fadeUp .6s ease forwards;}
-.title{font-size:2.1rem;font-weight:900;line-height:1.25;margin-bottom:10px;
-  animation:fadeUp .6s .15s ease both;}
+.badge{background:rgba(3,199,90,.11);border:1px solid rgba(3,199,90,.3);color:#03C75A;
+  padding:6px 20px;border-radius:20px;font-size:10.5px;font-weight:700;letter-spacing:3px;
+  margin-bottom:20px;animation:fadeUp .6s ease forwards;}
+.title{font-size:2.6rem;font-weight:900;line-height:1.2;margin-bottom:14px;
+  animation:fadeUp .6s .12s ease both;}
 .gr{background:linear-gradient(90deg,#03C75A,#00e676,#69ff6e);
   -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
-.wh{color:#fff;}
-.sub{color:rgba(255,255,255,.55);font-size:.87rem;line-height:1.75;
-  animation:fadeUp .6s .3s ease both;}
-.sub strong{color:rgba(255,255,255,.82);}
-.stats{display:flex;gap:36px;margin-top:20px;animation:fadeUp .6s .45s ease both;}
+.wh{color:#fff;font-size:1.5rem;font-weight:700;}
+.sub{color:rgba(255,255,255,.5);font-size:.86rem;animation:fadeUp .6s .25s ease both;}
+.stats{display:flex;gap:44px;margin-top:26px;animation:fadeUp .6s .4s ease both;}
 .stat{text-align:center;}
-.snum{font-size:1.45rem;font-weight:800;color:#03C75A;}
-.slbl{font-size:.66rem;color:rgba(255,255,255,.4);margin-top:2px;letter-spacing:.5px;}
-@keyframes fadeUp{from{opacity:0;transform:translateY(16px);}to{opacity:1;transform:translateY(0);}}
+.snum{font-size:1.55rem;font-weight:800;color:#03C75A;}
+.slbl{font-size:.64rem;color:rgba(255,255,255,.38);margin-top:3px;letter-spacing:.8px;}
+@keyframes fadeUp{from{opacity:0;transform:translateY(18px);}to{opacity:1;transform:translateY(0);}}
 </style></head><body>
 <canvas id="c"></canvas>
 <div class="hero">
   <div class="badge">✨ AI-POWERED NAVER BLOG AUTOMATION</div>
   <div class="title">
     <span class="gr">네이버 블로그 자동화</span><br>
-    <span class="wh" style="font-size:1.45rem;font-weight:700;">키워드 하나로 완성되는 블로그 글</span>
+    <span class="wh">키워드 하나로 완성</span>
   </div>
-  <div class="sub">경쟁사 분석 · SEO 키워드 · AI 작성 · 이미지 수집까지<br>
-    <strong>한 번에 자동으로 처리</strong>됩니다</div>
+  <div class="sub">경쟁사 분석 · SEO 키워드 · AI 작성 · 이미지 수집 — 전부 자동</div>
   <div class="stats">
-    <div class="stat"><div class="snum" id="n1">0</div><div class="slbl">서브키워드 자동분석</div></div>
+    <div class="stat"><div class="snum" id="n1">0</div><div class="slbl">서브키워드 분석</div></div>
     <div class="stat"><div class="snum">4가지</div><div class="slbl">글 유형 지원</div></div>
     <div class="stat"><div class="snum">~30초</div><div class="slbl">완성 소요 시간</div></div>
-    <div class="stat"><div class="snum">100%</div><div class="slbl">블로거 스타일 AI 작성</div></div>
+    <div class="stat"><div class="snum">100%</div><div class="slbl">블로거 스타일</div></div>
   </div>
 </div>
 <script>
-const canvas=document.getElementById('c');
-const ctx=canvas.getContext('2d');
-function resize(){canvas.width=window.innerWidth;canvas.height=290;}
-resize();
-const pts=Array.from({length:55},()=>({
+const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
+function rs(){canvas.width=window.innerWidth;canvas.height=360;}rs();
+const pts=Array.from({length:60},()=>({
   x:Math.random()*canvas.width,y:Math.random()*canvas.height,
-  vx:(Math.random()-.5)*.45,vy:(Math.random()-.5)*.45,
-  r:Math.random()*1.6+.4,o:Math.random()*.45+.1
+  vx:(Math.random()-.5)*.5,vy:(Math.random()-.5)*.5,
+  r:Math.random()*1.8+.3,o:Math.random()*.4+.1
 }));
 function draw(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
@@ -333,210 +357,165 @@ function draw(){
   });
   for(let i=0;i<pts.length;i++)for(let j=i+1;j<pts.length;j++){
     const dx=pts[j].x-pts[i].x,dy=pts[j].y-pts[i].y,d=Math.sqrt(dx*dx+dy*dy);
-    if(d<110){ctx.beginPath();ctx.moveTo(pts[i].x,pts[i].y);ctx.lineTo(pts[j].x,pts[j].y);
-      ctx.strokeStyle=`rgba(3,199,90,${.12*(1-d/110)})`;ctx.lineWidth=.5;ctx.stroke();}
+    if(d<115){ctx.beginPath();ctx.moveTo(pts[i].x,pts[i].y);ctx.lineTo(pts[j].x,pts[j].y);
+      ctx.strokeStyle=`rgba(3,199,90,${.13*(1-d/115)})`;ctx.lineWidth=.5;ctx.stroke();}
   }
   requestAnimationFrame(draw);
 }
 draw();
 let n=0;const el=document.getElementById('n1');
-const t=setInterval(()=>{n+=2;if(n>=30){n=30;clearInterval(t);}el.textContent=n+'+';},40);
-</script></body></html>""", height=290)
+const t=setInterval(()=>{n+=2;if(n>=30){n=30;clearInterval(t);}el.textContent=n+'+';},38);
+</script></body></html>""", height=360)
 
-    # ── 프로세스 플로우 인포그래픽 (SVG 애니메이션) ──────────
+    # ── 프로세스 플로우 인포그래픽 ───────────────────────────
     components.html("""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><style>
 *{margin:0;padding:0;box-sizing:border-box;}
 body{font-family:-apple-system,'Noto Sans KR',sans-serif;background:#fff;
-  padding:22px 16px 16px;}
-.label{text-align:center;font-size:.72rem;font-weight:700;color:#03C75A;
-  letter-spacing:2px;margin-bottom:18px;}
+  padding:20px 12px 12px;}
+.label{text-align:center;font-size:.68rem;font-weight:700;color:#03C75A;
+  letter-spacing:2.5px;margin-bottom:16px;}
 .flow{display:flex;align-items:center;justify-content:center;}
-.step{display:flex;flex-direction:column;align-items:center;gap:9px;
-  flex:0 0 auto;width:118px;animation:popIn .5s ease both;}
-.step:nth-child(1){animation-delay:.05s;} .step:nth-child(3){animation-delay:.25s;}
-.step:nth-child(5){animation-delay:.45s;} .step:nth-child(7){animation-delay:.65s;}
-.step:nth-child(9){animation-delay:.85s;}
-.icon-wrap{width:60px;height:60px;border-radius:50%;display:flex;align-items:center;
-  justify-content:center;font-size:1.45rem;position:relative;
-  box-shadow:0 4px 18px rgba(0,0,0,.1);}
+.step{display:flex;flex-direction:column;align-items:center;gap:8px;
+  flex:0 0 auto;width:110px;animation:popIn .45s ease both;}
+.step:nth-child(1){animation-delay:.05s;}.step:nth-child(3){animation-delay:.22s;}
+.step:nth-child(5){animation-delay:.4s;}.step:nth-child(7){animation-delay:.58s;}
+.step:nth-child(9){animation-delay:.76s;}
+.iw{width:58px;height:58px;border-radius:50%;display:flex;align-items:center;
+  justify-content:center;font-size:1.4rem;position:relative;
+  box-shadow:0 3px 14px rgba(0,0,0,.09);}
 .ring{position:absolute;inset:-5px;border-radius:50%;
-  border:2px dashed rgba(3,199,90,.28);animation:spin 9s linear infinite;}
-.num{position:absolute;top:-3px;right:-3px;width:19px;height:19px;
-  background:#03C75A;color:#fff;border-radius:50%;font-size:.6rem;font-weight:800;
+  border:2px dashed rgba(3,199,90,.25);animation:spin 9s linear infinite;}
+.num{position:absolute;top:-2px;right:-2px;width:18px;height:18px;
+  background:#03C75A;color:#fff;border-radius:50%;font-size:.58rem;font-weight:800;
   display:flex;align-items:center;justify-content:center;}
-.stitle{font-size:.78rem;font-weight:800;color:#1a1a1a;text-align:center;}
-.sdesc{font-size:.67rem;color:#888;text-align:center;line-height:1.4;}
-.arr{flex:1;display:flex;align-items:center;padding:0 2px;margin-bottom:32px;}
-.arr svg{width:100%;height:22px;overflow:visible;}
-@keyframes popIn{from{opacity:0;transform:scale(.65);}to{opacity:1;transform:scale(1);}}
+.st{font-size:.76rem;font-weight:800;color:#1a1a1a;text-align:center;}
+.sd{font-size:.64rem;color:#999;text-align:center;line-height:1.35;}
+.arr{flex:1;display:flex;align-items:center;padding:0 2px;margin-bottom:30px;}
+.arr svg{width:100%;height:20px;overflow:visible;}
+@keyframes popIn{from{opacity:0;transform:scale(.6);}to{opacity:1;transform:scale(1);}}
 @keyframes spin{to{transform:rotate(360deg);}}
 @keyframes dash{to{stroke-dashoffset:0;}}
 </style></head><body>
-<div class="label">▶ 자동화 프로세스 플로우</div>
+<div class="label">▶ 자동화 프로세스</div>
 <div class="flow">
   <div class="step">
-    <div class="icon-wrap" style="background:linear-gradient(135deg,#e8f5e9,#c8e6c9);">
-      <span>🎯</span><div class="ring"></div><div class="num">1</div>
-    </div>
-    <div class="stitle">키워드 입력</div>
-    <div class="sdesc">메인 키워드 +<br>브랜드 URL</div>
+    <div class="iw" style="background:linear-gradient(135deg,#e8f5e9,#c8e6c9);">
+      <span>🎯</span><div class="ring"></div><div class="num">1</div></div>
+    <div class="st">키워드 입력</div><div class="sd">키워드 + URL</div>
   </div>
-  <div class="arr"><svg viewBox="0 0 56 22"><path d="M2 11 H44" stroke="#03C75A" stroke-width="2"
-    stroke-dasharray="5 3" stroke-dashoffset="60"
-    style="animation:dash 1s .2s linear forwards;"/>
-    <path d="M40 5 L50 11 L40 17" stroke="#03C75A" stroke-width="2" fill="none"/></svg></div>
+  <div class="arr"><svg viewBox="0 0 52 20"><path d="M2 10H42" stroke="#03C75A" stroke-width="1.8"
+    stroke-dasharray="5 3" stroke-dashoffset="55" style="animation:dash .9s .15s linear forwards;"/>
+    <path d="M38 5L48 10L38 15" stroke="#03C75A" stroke-width="1.8" fill="none"/></svg></div>
   <div class="step">
-    <div class="icon-wrap" style="background:linear-gradient(135deg,#e3f2fd,#bbdefb);">
-      <span>🔑</span><div class="ring"></div><div class="num">2</div>
-    </div>
-    <div class="stitle">키워드 분석</div>
-    <div class="sdesc">30개+ 연관키워드<br>자동 수집</div>
+    <div class="iw" style="background:linear-gradient(135deg,#e3f2fd,#bbdefb);">
+      <span>🔑</span><div class="ring"></div><div class="num">2</div></div>
+    <div class="st">키워드 분석</div><div class="sd">30개+ 연관어</div>
   </div>
-  <div class="arr"><svg viewBox="0 0 56 22"><path d="M2 11 H44" stroke="#03C75A" stroke-width="2"
-    stroke-dasharray="5 3" stroke-dashoffset="60"
-    style="animation:dash 1s .5s linear forwards;"/>
-    <path d="M40 5 L50 11 L40 17" stroke="#03C75A" stroke-width="2" fill="none"/></svg></div>
+  <div class="arr"><svg viewBox="0 0 52 20"><path d="M2 10H42" stroke="#03C75A" stroke-width="1.8"
+    stroke-dasharray="5 3" stroke-dashoffset="55" style="animation:dash .9s .4s linear forwards;"/>
+    <path d="M38 5L48 10L38 15" stroke="#03C75A" stroke-width="1.8" fill="none"/></svg></div>
   <div class="step">
-    <div class="icon-wrap" style="background:linear-gradient(135deg,#fff3e0,#ffe0b2);">
-      <span>🛍️</span><div class="ring"></div><div class="num">3</div>
-    </div>
-    <div class="stitle">제품 검색·선택</div>
-    <div class="sdesc">최저가 확정 &<br>경쟁사 분석</div>
+    <div class="iw" style="background:linear-gradient(135deg,#fff3e0,#ffe0b2);">
+      <span>🛍️</span><div class="ring"></div><div class="num">3</div></div>
+    <div class="st">제품 선택</div><div class="sd">최저가 확정</div>
   </div>
-  <div class="arr"><svg viewBox="0 0 56 22"><path d="M2 11 H44" stroke="#03C75A" stroke-width="2"
-    stroke-dasharray="5 3" stroke-dashoffset="60"
-    style="animation:dash 1s .8s linear forwards;"/>
-    <path d="M40 5 L50 11 L40 17" stroke="#03C75A" stroke-width="2" fill="none"/></svg></div>
+  <div class="arr"><svg viewBox="0 0 52 20"><path d="M2 10H42" stroke="#03C75A" stroke-width="1.8"
+    stroke-dasharray="5 3" stroke-dashoffset="55" style="animation:dash .9s .65s linear forwards;"/>
+    <path d="M38 5L48 10L38 15" stroke="#03C75A" stroke-width="1.8" fill="none"/></svg></div>
   <div class="step">
-    <div class="icon-wrap" style="background:linear-gradient(135deg,#fce4ec,#f8bbd0);">
-      <span>🤖</span><div class="ring"></div><div class="num">4</div>
-    </div>
-    <div class="stitle">AI 글 작성</div>
-    <div class="sdesc">SEO 최적화<br>블로거 스타일</div>
+    <div class="iw" style="background:linear-gradient(135deg,#fce4ec,#f8bbd0);">
+      <span>🤖</span><div class="ring"></div><div class="num">4</div></div>
+    <div class="st">AI 글 작성</div><div class="sd">SEO 최적화</div>
   </div>
-  <div class="arr"><svg viewBox="0 0 56 22"><path d="M2 11 H44" stroke="#03C75A" stroke-width="2"
-    stroke-dasharray="5 3" stroke-dashoffset="60"
-    style="animation:dash 1s 1.1s linear forwards;"/>
-    <path d="M40 5 L50 11 L40 17" stroke="#03C75A" stroke-width="2" fill="none"/></svg></div>
+  <div class="arr"><svg viewBox="0 0 52 20"><path d="M2 10H42" stroke="#03C75A" stroke-width="1.8"
+    stroke-dasharray="5 3" stroke-dashoffset="55" style="animation:dash .9s .9s linear forwards;"/>
+    <path d="M38 5L48 10L38 15" stroke="#03C75A" stroke-width="1.8" fill="none"/></svg></div>
   <div class="step">
-    <div class="icon-wrap" style="background:linear-gradient(135deg,#e8eaf6,#c5cae9);">
-      <span>✅</span><div class="ring"></div><div class="num">5</div>
-    </div>
-    <div class="stitle">완성 & 다운로드</div>
-    <div class="sdesc">HTML·텍스트 &<br>이미지 저장</div>
+    <div class="iw" style="background:linear-gradient(135deg,#e8eaf6,#c5cae9);">
+      <span>✅</span><div class="ring"></div><div class="num">5</div></div>
+    <div class="st">완성 & 저장</div><div class="sd">HTML + 이미지</div>
   </div>
 </div>
-</body></html>""", height=205)
+</body></html>""", height=198)
 
-    # ── 핵심 기능 카드 ─────────────────────────────────────────
+    # ── 글 유형 선택 타일 ────────────────────────────────────
     st.markdown(
-        '<div style="margin:8px 0 10px;">'
-        '<span style="font-size:.72rem;font-weight:700;color:#03C75A;letter-spacing:2px;">▶ 핵심 기능</span>'
-        '</div>', unsafe_allow_html=True,
+        '<div style="margin:12px 0 10px;text-align:center;">'
+        '<span style="font-size:.68rem;font-weight:700;color:#03C75A;letter-spacing:2.5px;">'
+        '▶ 글 유형을 선택하세요</span></div>',
+        unsafe_allow_html=True,
     )
-    fc1, fc2, fc3 = st.columns(3)
-    for col, icon, bg, accent, title, desc in [
-        (fc1, "🤖", "#e8f5e9", "#1b5e20",
-         "AI 블로거 스타일 작성",
-         "단순 요약 아님 — 1인칭 후기·후킹 도입부·실사용 경험 등 진짜 블로거처럼"),
-        (fc2, "🔑", "#e3f2fd", "#0d47a1",
-         "SEO 키워드 자동 삽입",
-         "네이버 검색광고 API로 30개+ 연관키워드 분석 → 상위 8개 자연스럽게 배치"),
-        (fc3, "📸", "#fff3e0", "#bf360c",
-         "이미지 자동 수집",
-         "네이버 쇼핑 제품 이미지 자동 다운로드 → 블로그 삽입 가이드까지 제공"),
-    ]:
-        with col:
-            st.markdown(
-                f'<div style="background:{bg};border-radius:14px;padding:18px 16px;'
-                f'min-height:140px;border:1px solid rgba(0,0,0,.05);">'
-                f'<div style="font-size:1.55rem;margin-bottom:8px;">{icon}</div>'
-                f'<div style="font-size:.82rem;font-weight:800;color:{accent};margin-bottom:6px;">{title}</div>'
-                f'<div style="font-size:.75rem;color:#555;line-height:1.55;">{desc}</div>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-
-    # ── 글 유형 퀵메뉴 ─────────────────────────────────────────
-    st.markdown(
-        '<div style="margin:18px 0 8px;">'
-        '<span style="font-size:.72rem;font-weight:700;color:#03C75A;letter-spacing:2px;">▶ 빠른 시작 — 글 유형 선택</span>'
-        '</div>', unsafe_allow_html=True,
-    )
-    st.caption("글 유형을 먼저 선택하면 사이드바 설정이 자동 적용됩니다. 이후 키워드와 URL을 입력하세요.")
-
-    qc1, qc2, qc3, qc4 = st.columns(4)
-    QUICK_TYPES = [
-        ("review",  "📝", "리뷰형",      "솔직 사용 후기 · 장단점 분석",    "#e8f5e9", "#2e7d32"),
-        ("compare", "⚖️", "비교형",      "2~3개 제품 비교 · 추천",           "#e3f2fd", "#1565c0"),
-        ("info",    "💡", "정보전달형",  "구매 전 핵심 정보 · 선택 가이드",  "#fff8e1", "#f57f17"),
-        ("howto",   "🛠️", "활용법형",    "사용 팁 & 노하우 · 활용 가이드",   "#f3e5f5", "#6a1b9a"),
+    tc1, tc2, tc3, tc4 = st.columns(4)
+    TYPES = [
+        ("review",  "📝", "리뷰형",      "#e8f5e9", "#2e7d32"),
+        ("compare", "⚖️", "비교형",      "#e3f2fd", "#1565c0"),
+        ("info",    "💡", "정보전달형",  "#fff8e1", "#e65100"),
+        ("howto",   "🛠️", "활용법형",    "#f3e5f5", "#6a1b9a"),
     ]
-    for col, (ptype, icon, name, desc, bg, accent) in zip([qc1, qc2, qc3, qc4], QUICK_TYPES):
+    for col, (ptype, icon, name, bg, accent) in zip([tc1, tc2, tc3, tc4], TYPES):
         with col:
             is_sel = st.session_state.post_type == ptype
-            border = f"2.5px solid {accent}" if is_sel else "2px solid #e8e8e8"
-            bg_use = bg if is_sel else "#fafafa"
+            bdr = f"2.5px solid {accent}" if is_sel else "2px solid #e8e8e8"
             st.markdown(
-                f'<div style="background:{bg_use};border:{border};border-radius:14px;'
-                f'padding:16px 12px;text-align:center;min-height:116px;">'
-                f'<div style="font-size:1.7rem;margin-bottom:6px;">{icon}</div>'
-                f'<div style="font-size:.83rem;font-weight:800;'
-                f'color:{accent if is_sel else "#1a1a1a"};margin-bottom:4px;">{name}</div>'
-                f'<div style="font-size:.71rem;color:#777;line-height:1.4;">{desc}</div>'
-                + (f'<div style="font-size:.67rem;color:{accent};font-weight:700;margin-top:7px;">✓ 선택됨</div>' if is_sel else '')
+                f'<div class="type-tile" style="background:{"" + bg if is_sel else "#fafafa"};'
+                f'border:{bdr};">'
+                f'<div style="font-size:2rem;margin-bottom:6px;">{icon}</div>'
+                f'<div style="font-size:.84rem;font-weight:800;'
+                f'color:{accent if is_sel else "#1a1a1a"};">{name}</div>'
+                + (f'<div style="font-size:.65rem;color:{accent};font-weight:700;margin-top:5px;">✓ 선택</div>' if is_sel else '')
                 + '</div>',
                 unsafe_allow_html=True,
             )
-            if st.button(
-                "✓ 선택됨" if is_sel else "선택",
-                key=f"qt_{ptype}",
-                use_container_width=True,
-                type="primary" if is_sel else "secondary",
-            ):
+            if st.button("선택됨" if is_sel else "선택", key=f"ht_{ptype}",
+                         use_container_width=True,
+                         type="primary" if is_sel else "secondary"):
                 st.session_state.post_type = ptype
                 st.rerun()
 
-    # ── 사용 방법 (6단계 가이드) ───────────────────────────────
+    # ── CTA ─────────────────────────────────────────────────
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+    _, mid, _ = st.columns([1, 2, 1])
+    with mid:
+        st.markdown('<div class="home-cta">', unsafe_allow_html=True)
+        if st.button("✍️ 글 작성 시작하기 →", type="primary", use_container_width=True):
+            st.session_state.page = "tool"
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+        st.caption("키워드와 URL은 다음 화면에서 입력합니다.")
+
+
+
+# ════════════════════════════════════════════════
+# STEP 0: 입력 안내 (도구 페이지)
+# ════════════════════════════════════════════════
+elif st.session_state.step == 0:
+    show_tool_header()
     st.markdown(
-        '<div style="margin:20px 0 10px;">'
-        '<span style="font-size:.72rem;font-weight:700;color:#03C75A;letter-spacing:2px;">▶ 사용 방법</span>'
-        '</div>', unsafe_allow_html=True,
+        '<div style="display:flex;align-items:center;justify-content:center;'
+        'min-height:300px;">'
+        '<div style="max-width:480px;text-align:center;padding:32px;">'
+        '<div style="font-size:3.5rem;margin-bottom:16px;">✍️</div>'
+        '<div style="font-size:1.3rem;font-weight:800;color:#1a1a1a;margin-bottom:10px;">'
+        '사이드바에서 정보를 입력하세요</div>'
+        '<div style="font-size:.88rem;color:#666;line-height:1.8;margin-bottom:24px;">'
+        '← 왼쪽 사이드바에 키워드와 Brand Connect URL을 입력한 후<br>'
+        '<strong style="color:#03C75A;">➡️ 제품 검색 시작</strong> 버튼을 클릭하면 바로 시작됩니다.</div>'
+        '<div style="display:flex;flex-direction:column;gap:8px;text-align:left;'
+        'background:#f8f8f8;border-radius:12px;padding:16px;">'
+        '<div style="font-size:.8rem;color:#555;">🎯 <b>메인 키워드</b> — 블로그 주제 (예: 에어프라이어 추천)</div>'
+        '<div style="font-size:.8rem;color:#555;">🔗 <b>Brand Connect URL</b> — 제품 링크</div>'
+        '<div style="font-size:.8rem;color:#555;">📂 <b>카테고리 / 글 유형</b> — 이미 선택됨</div>'
+        '</div></div></div>',
+        unsafe_allow_html=True,
     )
-    g1, g2 = st.columns(2)
-    GUIDE = [
-        ("1", "사이드바에서 🎯 메인 키워드 입력",
-         "블로그 주제 키워드 (예: 에어프라이어 추천, 무선청소기 비교)"),
-        ("2", "🔗 Brand Connect URL 붙여넣기",
-         "네이버 브랜드커넥트 링크 — 없으면 스마트스토어 URL도 가능"),
-        ("3", "위에서 글 유형 선택",
-         "리뷰/비교/정보전달/활용법 (비교형은 경쟁제품도 검색 가능)"),
-        ("4", "➡️ 제품 검색 시작 클릭",
-         "AI가 키워드 분석 → 제품 카드 표시 → 클릭 한 번으로 정확한 최저가 적용"),
-        ("5", "✅ 이 정보로 블로그 글 작성하기",
-         "Claude AI가 30초~1분 내 SEO 최적화 블로그 글 완성"),
-        ("6", "HTML / 텍스트 복사해서 업로드",
-         "HTML 코드 복사 → 네이버 블로그 HTML 편집 모드에 붙여넣기 완료"),
-    ]
-    for i, (num, title, desc) in enumerate(GUIDE):
-        with (g1 if i % 2 == 0 else g2):
-            st.markdown(
-                f'<div style="display:flex;gap:11px;align-items:flex-start;margin-bottom:13px;">'
-                f'<div style="min-width:27px;height:27px;background:#03C75A;color:#fff;'
-                f'border-radius:50%;display:flex;align-items:center;justify-content:center;'
-                f'font-size:.72rem;font-weight:800;flex-shrink:0;">{num}</div>'
-                f'<div><div style="font-size:.81rem;font-weight:700;color:#111;margin-bottom:2px;">{title}</div>'
-                f'<div style="font-size:.73rem;color:#666;line-height:1.45;">{desc}</div></div>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
 
 
 # ════════════════════════════════════════════════
 # STEP 1: 제품 검색 & 선택
 # ════════════════════════════════════════════════
 elif st.session_state.step == 1:
+    show_tool_header()
     st.markdown("### 🛍️ 제품 검색 & 선택")
 
     naver_cid = os.getenv("NAVER_CLIENT_ID", "")
@@ -688,6 +667,7 @@ elif st.session_state.step == 1:
 # STEP 2: 글 생성 중
 # ════════════════════════════════════════════════
 elif st.session_state.step == 2:
+    show_tool_header()
     st.markdown("### ✍️ 블로그 글 생성 중...")
     progress = st.progress(0)
     status   = st.empty()
@@ -764,6 +744,7 @@ elif st.session_state.step == 2:
 # STEP 3: 결과 화면
 # ════════════════════════════════════════════════
 elif st.session_state.step == 3:
+    show_tool_header()
     post      = st.session_state.post_content
     html_code = st.session_state.post_html or to_naver_html(post)
     images    = st.session_state.saved_images
@@ -881,6 +862,7 @@ elif st.session_state.step == 3:
 # STEP -1: 오류 화면
 # ════════════════════════════════════════════════
 elif st.session_state.step == -1:
+    show_tool_header()
     st.markdown(
         f"""
         <div class="err-box">
