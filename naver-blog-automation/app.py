@@ -252,18 +252,22 @@ with st.sidebar:
 
         disabled = st.session_state.step > 0
 
-        keyword = st.text_input(
-            "🎯 메인 키워드",
-            value=st.session_state.keyword,
-            placeholder="예) 에어프라이어 추천",
-            disabled=disabled,
-        )
         brand_url = st.text_input(
             "🔗 Brand Connect URL",
             value=st.session_state.brand_url,
-            placeholder="https://brandc.naver.com/...",
+            placeholder="https://brand.naver.com/...",
             disabled=disabled,
         )
+
+        # 메인 키워드는 URL에서 자동 추출 후 표시 (읽기 전용)
+        if st.session_state.keyword and disabled:
+            st.markdown(
+                f'<div style="background:#f0faf4;border:1px solid #03C75A;border-radius:6px;'
+                f'padding:6px 10px;font-size:0.82rem;color:#03C75A;margin-bottom:6px;">'
+                f'🎯 메인 키워드: <b>{st.session_state.keyword}</b></div>',
+                unsafe_allow_html=True,
+            )
+
         category = st.selectbox(
             "📂 카테고리",
             options=list(CATEGORIES.keys()),
@@ -287,21 +291,21 @@ with st.sidebar:
         st.markdown("---")
 
         if st.session_state.step == 0:
-            can_go = bool(keyword and brand_url)
-            if st.button("➡️ 제품 검색 시작", type="primary",
+            can_go = bool(brand_url)
+            if st.button("➡️ 분석 시작", type="primary",
                          use_container_width=True, disabled=not can_go):
-                st.session_state.keyword   = keyword
+                st.session_state.keyword   = ""   # URL에서 자동 추출
                 st.session_state.brand_url = brand_url
                 st.session_state.category  = category
                 st.session_state.post_type = post_type
-                st.session_state.search_query = keyword
+                st.session_state.search_query = ""
                 st.session_state.comp_sq_0 = ""
                 st.session_state.comp_sq_1 = ""
                 st.session_state.kw_researched = False
                 st.session_state.step = 1
                 st.rerun()
             if not can_go:
-                st.caption("키워드와 URL을 입력하면 활성화됩니다.")
+                st.caption("Brand Connect URL을 입력하면 활성화됩니다.")
 
 
 # ── 공통: API 키 확인 ────────────────────────────────
@@ -421,7 +425,7 @@ body{font-family:-apple-system,'Noto Sans KR',sans-serif;background:#fff;
   <div class="step">
     <div class="iw" style="background:linear-gradient(135deg,#e8f5e9,#c8e6c9);">
       <span>🎯</span><div class="ring"></div><div class="num">1</div></div>
-    <div class="st">키워드 입력</div><div class="sd">키워드 + URL</div>
+    <div class="st">URL 입력</div><div class="sd">Brand Connect</div>
   </div>
   <div class="arr"><svg viewBox="0 0 52 20"><path d="M2 10H42" stroke="#03C75A" stroke-width="1.8"
     stroke-dasharray="5 3" stroke-dashoffset="55" style="animation:dash .9s .15s linear forwards;"/>
@@ -429,7 +433,7 @@ body{font-family:-apple-system,'Noto Sans KR',sans-serif;background:#fff;
   <div class="step">
     <div class="iw" style="background:linear-gradient(135deg,#e3f2fd,#bbdefb);">
       <span>🔑</span><div class="ring"></div><div class="num">2</div></div>
-    <div class="st">키워드 분석</div><div class="sd">30개+ 연관어</div>
+    <div class="st">키워드 자동 확정</div><div class="sd">검색량 1위 선택</div>
   </div>
   <div class="arr"><svg viewBox="0 0 52 20"><path d="M2 10H42" stroke="#03C75A" stroke-width="1.8"
     stroke-dasharray="5 3" stroke-dashoffset="55" style="animation:dash .9s .4s linear forwards;"/>
@@ -518,12 +522,12 @@ elif st.session_state.step == 0:
         '<div style="font-size:1.3rem;font-weight:800;color:#1a1a1a;margin-bottom:10px;">'
         '사이드바에서 정보를 입력하세요</div>'
         '<div style="font-size:.88rem;color:#666;line-height:1.8;margin-bottom:24px;">'
-        '← 왼쪽 사이드바에 키워드와 Brand Connect URL을 입력한 후<br>'
-        '<strong style="color:#03C75A;">➡️ 제품 검색 시작</strong> 버튼을 클릭하면 바로 시작됩니다.</div>'
+        '← 왼쪽 사이드바에 Brand Connect URL을 입력한 후<br>'
+        '<strong style="color:#03C75A;">➡️ 분석 시작</strong> 버튼을 클릭하면 키워드부터 제품 검색까지 자동으로 진행됩니다.</div>'
         '<div style="display:flex;flex-direction:column;gap:8px;text-align:left;'
         'background:#f8f8f8;border-radius:12px;padding:16px;">'
-        '<div style="font-size:.8rem;color:#555;">🎯 <b>메인 키워드</b> — 블로그 주제 (예: 에어프라이어 추천)</div>'
-        '<div style="font-size:.8rem;color:#555;">🔗 <b>Brand Connect URL</b> — 제품 링크</div>'
+        '<div style="font-size:.8rem;color:#555;">🔗 <b>Brand Connect URL</b> — 제품 링크만 입력하면 끝!</div>'
+        '<div style="font-size:.8rem;color:#555;">🎯 <b>메인 키워드</b> — URL에서 자동 추출 + 검색량 분석</div>'
         '<div style="font-size:.8rem;color:#555;">📂 <b>카테고리 / 글 유형</b> — 이미 선택됨</div>'
         '</div></div></div>',
         unsafe_allow_html=True,
@@ -543,28 +547,43 @@ elif st.session_state.step == 1:
 
     # ── 전체 자동화 초기화 (최초 1회) ─────────────────────────
     if not st.session_state.kw_researched:
-        with st.spinner("🤖 키워드 분석 · 제품 검색 · 경쟁사 자동 탐색 중..."):
+        with st.spinner("🤖 URL 분석 · 키워드 리서치 · 제품 검색 · 경쟁사 탐색 중..."):
 
-            # 1. 키워드 리서치
-            try:
-                researcher = NaverKeywordResearch(naver_key, naver_secret, naver_customer)
-                raw_kws = researcher.get_related_keywords(st.session_state.keyword, top_n=30)
-                st.session_state.sub_keywords = researcher.select_sub_keywords(raw_kws, count=8)
-            except Exception:
-                st.session_state.sub_keywords = []
-
-            # 2. Brand URL → 제품명 추출 (검색 정교화)
-            search_q = st.session_state.keyword
+            # 1. Brand URL → 제품명 추출
+            product_name_from_url = ""
             if st.session_state.brand_url:
                 try:
                     url_data = scraper._scrape_from_url(st.session_state.brand_url)
                     extracted = url_data.get("name", "").strip()
-                    if extracted and len(extracted) > 3 and extracted != st.session_state.keyword:
-                        search_q = extracted
+                    if extracted and len(extracted) > 3:
+                        product_name_from_url = extracted
                 except Exception:
                     pass
 
-            # 3. 메인 제품 자동 검색
+            # URL에서 제품명 추출 실패 시 URL 경로에서 힌트 파싱
+            if not product_name_from_url and st.session_state.brand_url:
+                import re as _re
+                slug = st.session_state.brand_url.rstrip("/").split("/")[-1]
+                product_name_from_url = _re.sub(r"[_\-]", " ", slug).strip() or "제품"
+
+            # 2. 키워드 API → 검색량 순위로 메인키워드 자동 확정
+            researcher = NaverKeywordResearch(naver_key, naver_secret, naver_customer)
+            try:
+                raw_kws = researcher.get_related_keywords(product_name_from_url, top_n=30)
+                if raw_kws:
+                    # 검색량 1위 = 메인 키워드
+                    st.session_state.keyword = raw_kws[0]["keyword"]
+                    # 검색량 상위 8개 = 서브 키워드 (메인 제외)
+                    st.session_state.sub_keywords = researcher.select_sub_keywords(raw_kws[1:], count=8)
+                else:
+                    st.session_state.keyword = product_name_from_url
+                    st.session_state.sub_keywords = []
+            except Exception:
+                st.session_state.keyword = product_name_from_url
+                st.session_state.sub_keywords = []
+
+            # 3. 메인 제품 자동 검색 (제품명으로)
+            search_q = product_name_from_url
             try:
                 st.session_state.search_results = scraper.search_products(search_q, top_n=8)
                 st.session_state.search_query = search_q
@@ -574,7 +593,9 @@ elif st.session_state.step == 1:
 
             # 4. 경쟁사 자동 탐색 (비교형일 때만)
             if st.session_state.post_type == "compare":
-                comp_queries = suggest_competitor_queries(anthropic_key, st.session_state.keyword, search_q)
+                comp_queries = suggest_competitor_queries(
+                    anthropic_key, st.session_state.keyword, search_q
+                )
                 for ci, cq in enumerate(comp_queries[:2]):
                     try:
                         st.session_state[f"comp_sr_{ci}"] = scraper.search_products(cq, top_n=8)
