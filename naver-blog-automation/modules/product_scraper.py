@@ -25,7 +25,30 @@ NOISE_PATTERNS = [
     "로그인", "회원가입", "장바구니", "비정상적인 접근", "접속을 일시적",
     "KT인터넷", "당일개통", "shop.kt", "copyright", "고객센터",
     "서비스 이용약관", "개인정보처리방침", "이벤트 혜택",
+    "네이버 브랜드 커넥트", "브랜드 커넥트", "Naver Brand Connect",
+    "스마트스토어", "네이버쇼핑", "네이버 쇼핑",
 ]
+
+
+def _find_product_name(obj, depth: int = 0) -> str:
+    """JSON 트리를 재귀적으로 탐색해 productName / name 필드 추출"""
+    if depth > 8:
+        return ""
+    if isinstance(obj, dict):
+        for key in ("productName", "name", "goodsName", "itemName"):
+            val = obj.get(key, "")
+            if isinstance(val, str) and len(val) > 3 and not any(n in val for n in NOISE_PATTERNS):
+                return val.strip()
+        for v in obj.values():
+            found = _find_product_name(v, depth + 1)
+            if found:
+                return found
+    elif isinstance(obj, list):
+        for item in obj[:5]:
+            found = _find_product_name(item, depth + 1)
+            if found:
+                return found
+    return ""
 
 
 def _is_noise(text: str) -> bool:
@@ -536,7 +559,8 @@ class ProductScraper:
                     for raw in [og_title, page_title]:
                         if raw:
                             name = re.split(r"[:\|｜–—]", raw)[0].strip()
-                            if name and len(name) > 3:
+                            if (name and len(name) > 3
+                                    and not any(n in name for n in NOISE_PATTERNS)):
                                 result["name"] = name
                                 break
                 except Exception:
@@ -643,10 +667,10 @@ class ProductScraper:
                         product = v
                         break
 
-            if not product:
-                return {}
-
+            # 일반 경로 실패 시 전체 JSON 재귀 탐색
             name = product.get("productName", "") or product.get("name", "")
+            if not name:
+                name = _find_product_name(nd)
             sale_price = _to_int(product.get("salePrice", 0) or product.get("price", 0))
             discounted = _to_int(product.get("discountedSalePrice", 0) or product.get("discountPrice", 0))
             display_price = discounted if discounted and discounted < sale_price else sale_price
