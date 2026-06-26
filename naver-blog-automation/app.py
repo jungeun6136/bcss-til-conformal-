@@ -1056,6 +1056,7 @@ elif st.session_state.step == 2:
                           if c.isalnum() or c in (' ', '-', '_')).strip()[:20]
         output_dir = Path(__file__).parent / "output" / f"{timestamp}_{safe_kw}"
         images_dir = output_dir / "images"
+        images_dir.mkdir(parents=True, exist_ok=True)
         downloader = ImageDownloader(str(images_dir))
         saved_images = downloader.download_images(
             st.session_state.product_info.get("images", []), prefix="product"
