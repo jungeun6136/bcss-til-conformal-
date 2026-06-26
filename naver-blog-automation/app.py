@@ -15,6 +15,7 @@ from modules.image_downloader import ImageDownloader
 from modules.content_generator import ContentGenerator
 from modules.competitor_researcher import CompetitorResearcher
 from modules.blog_analyzer import BlogAnalyzer
+from modules.blog_poster import NaverBlogPoster
 from modules.html_formatter import to_naver_html
 from modules.templates import CATEGORIES, POST_TYPES
 
@@ -1227,6 +1228,88 @@ elif st.session_state.step == 3:
                         st.warning(f"이미지 {i+1} 미리보기 불가")
         else:
             st.info("다운로드된 이미지가 없습니다. 직접 제품 이미지를 추가해주세요.")
+
+    # ════════════════════════════════════════════════
+    # 자동 발행 섹션
+    # ════════════════════════════════════════════════
+    st.divider()
+    st.markdown("### 🚀 네이버 블로그 자동 발행")
+
+    _naver_id = os.getenv("NAVER_ID", "")
+    _naver_pw = os.getenv("NAVER_PW", "")
+    _poster   = NaverBlogPoster(str(Path(__file__).parent / "poster_data"))
+
+    # 상태 카드 3개
+    pc1, pc2, pc3 = st.columns(3)
+    with pc1:
+        _login_status = "✅ 로그인됨" if _poster.is_logged_in() else "❌ 미로그인"
+        st.markdown(
+            f'<div class="stat-card"><div class="stat-num" style="font-size:1.1rem;">{_login_status}</div>'
+            f'<div class="stat-lbl">로그인 상태</div></div>',
+            unsafe_allow_html=True,
+        )
+    with pc2:
+        _today = _poster.today_count()
+        st.markdown(
+            f'<div class="stat-card"><div class="stat-num">{_today}/{_poster.MAX_DAILY}</div>'
+            f'<div class="stat-lbl">오늘 발행</div></div>',
+            unsafe_allow_html=True,
+        )
+    with pc3:
+        _rem = _poster.remaining()
+        _rem_color = "#03C75A" if _rem > 0 else "#e53935"
+        st.markdown(
+            f'<div class="stat-card"><div class="stat-num" style="color:{_rem_color};">{_rem}개</div>'
+            f'<div class="stat-lbl">남은 발행 횟수</div></div>',
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+
+    if not _naver_id or not _naver_pw:
+        st.warning(
+            "📋 `.env` 파일에 `NAVER_ID`와 `NAVER_PW`를 추가하면 자동 발행이 활성화됩니다.",
+            icon="ℹ️",
+        )
+    elif not _poster.is_logged_in():
+        st.info("네이버에 로그인하면 자동 발행 버튼이 활성화됩니다.", icon="🔑")
+        if st.button("🔑 네이버 로그인하기", use_container_width=True):
+            with st.spinner("브라우저를 열어 로그인 중... (캡챠/2FA 발생 시 직접 처리하세요)"):
+                _ok, _msg = _poster.login(_naver_id, _naver_pw)
+            if _ok:
+                st.success(_msg)
+                st.rerun()
+            else:
+                st.error(_msg)
+    else:
+        _col_post, _col_logout = st.columns([3, 1])
+        with _col_post:
+            _can = _poster.can_post()
+            if st.button(
+                "🚀 네이버 블로그에 자동 발행",
+                type="primary",
+                use_container_width=True,
+                disabled=not _can,
+            ):
+                _title = post.split("\n")[0].strip().lstrip("#").strip() or st.session_state.keyword
+                with st.spinner("블로그에 발행 중... 브라우저가 잠시 열립니다."):
+                    _ok, _msg = _poster.post(
+                        title=_title,
+                        content=post,
+                        images=st.session_state.saved_images,
+                        naver_id=_naver_id,
+                    )
+                if _ok:
+                    st.success(f"✅ {_msg}")
+                else:
+                    st.error(f"발행 실패: {_msg}")
+                st.rerun()
+            if not _can:
+                st.caption(f"오늘 발행 한도({_poster.MAX_DAILY}개) 도달 — 내일 다시 가능합니다.")
+        with _col_logout:
+            if st.button("로그아웃", use_container_width=True):
+                _poster.clear_login()
+                st.rerun()
 
     st.divider()
     if st.button("🏠 새 글 작성하기 (처음으로)", type="primary"):
