@@ -28,40 +28,88 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-    .main-title { font-size:1.7rem; font-weight:800; color:#03C75A; margin:0 0 2px; }
-    .sub-title  { font-size:0.88rem; color:#888; margin:0 0 8px; }
-    .step-bar   { display:flex; align-items:center; gap:8px; margin:8px 0; }
-    .step-dot   { width:26px; height:26px; border-radius:50%; background:#e0e0e0;
-                  color:#999; display:flex; align-items:center; justify-content:center;
-                  font-weight:700; font-size:0.78rem; flex-shrink:0; }
-    .step-dot.active  { background:#03C75A; color:white; }
-    .step-dot.done    { background:#b2dfdb; color:#00796b; }
-    .step-line  { flex:1; height:2px; background:#e0e0e0; }
-    .step-line.done { background:#b2dfdb; }
-    .kw-chip    { display:inline-block; background:#f0faf4; border:1px solid #03C75A;
-                  color:#03C75A; padding:3px 12px; border-radius:20px;
-                  margin:3px; font-size:0.82rem; }
-    .post-box   { background:#fafafa; border:1px solid #e0e0e0; border-radius:10px;
-                  padding:1.2rem; white-space:pre-wrap; font-size:0.92rem;
-                  line-height:1.8; max-height:580px; overflow-y:auto; }
-    .stat-card  { background:white; border:1px solid #eee; border-radius:10px;
-                  padding:0.75rem; text-align:center; }
-    .stat-num   { font-size:1.5rem; font-weight:800; color:#03C75A; }
-    .stat-lbl   { font-size:0.75rem; color:#888; }
-    .info-block { background:#f8f8f8; border-left:4px solid #03C75A;
-                  padding:0.6rem 0.8rem; border-radius:4px; margin:4px 0; }
-    .err-box    { background:#fff3f3; border:1px solid #ffcdd2; border-radius:10px;
-                  padding:1.2rem; text-align:center; }
-    /* 전역 여백 */
-    .block-container { padding-top:2.5rem !important; padding-bottom:1rem !important; }
-    section[data-testid="stSidebar"] .block-container { padding-top:0.5rem !important; }
-    div[data-testid="stVerticalBlock"] > div { gap:0.3rem; }
-    hr { margin:0.5rem 0 !important; }
-    /* 랜딩 페이지 전용 */
-    .home-cta > div > button { font-size:1.1rem !important; height:3rem !important; }
-    .type-tile { border-radius:16px; padding:18px 8px; text-align:center;
-                 cursor:pointer; transition:all .15s; }
-    .type-tile:hover { transform:translateY(-2px); box-shadow:0 6px 20px rgba(0,0,0,.1); }
+/* ═══ 전역 배경 ═══════════════════════════════════════════ */
+.stApp { background: #f0f4f8; }
+.main .block-container { background: transparent; }
+
+/* ═══ 다크 사이드바 ════════════════════════════════════════ */
+section[data-testid="stSidebar"] > div:first-child { background: #0d1b2a !important; }
+section[data-testid="stSidebar"] label { color: #8fafc8 !important; font-size: 0.75rem !important; font-weight: 600 !important; letter-spacing: 0.5px !important; }
+section[data-testid="stSidebar"] p, section[data-testid="stSidebar"] span { color: #c8dcea !important; }
+section[data-testid="stSidebar"] h1, section[data-testid="stSidebar"] h2, section[data-testid="stSidebar"] h3 { color: #e8f4fd !important; }
+section[data-testid="stSidebar"] input { background: #152334 !important; color: #e8f4fd !important; border: 1px solid #1e3550 !important; border-radius: 8px !important; }
+section[data-testid="stSidebar"] input:focus { border-color: #03C75A !important; box-shadow: 0 0 0 2px rgba(3,199,90,0.2) !important; }
+section[data-testid="stSidebar"] .stSelectbox > div > div { background: #152334 !important; border: 1px solid #1e3550 !important; color: #e8f4fd !important; border-radius: 8px !important; }
+section[data-testid="stSidebar"] hr { border-color: #1e3550 !important; }
+section[data-testid="stSidebar"] .stButton > button { border-radius: 10px !important; }
+
+/* ═══ 타이포 ═══════════════════════════════════════════════ */
+.main-title { font-size:1.75rem; font-weight:900; background:linear-gradient(90deg,#03C75A,#00BCD4); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; margin:0 0 2px; letter-spacing:-0.5px; }
+.sub-title  { font-size:0.85rem; color:#6b7c93; margin:0 0 8px; font-weight:500; }
+
+/* ═══ 스텝바 ═══════════════════════════════════════════════ */
+.step-bar { display:flex; align-items:center; gap:6px; margin:12px 0 4px; }
+.step-wrap { display:flex; flex-direction:column; align-items:center; gap:5px; }
+.step-dot { width:34px; height:34px; border-radius:50%; background:#e4eaf0; color:#a0adb8; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:0.78rem; flex-shrink:0; transition:all 0.35s cubic-bezier(0.34,1.56,0.64,1); box-shadow:0 2px 8px rgba(0,0,0,0.06); }
+.step-dot.active { background:linear-gradient(135deg,#03C75A,#00BCD4); color:white; box-shadow:0 4px 18px rgba(3,199,90,0.4); animation:pulse-step 2.2s ease-in-out infinite; }
+.step-dot.done { background:linear-gradient(135deg,#b2f0da,#80deea); color:#006644; }
+.step-lbl { font-size:0.68rem; font-weight:600; white-space:nowrap; color:#a0adb8; transition:color 0.3s; }
+.step-lbl.active { color:#03C75A; }
+.step-lbl.done { color:#00a86b; }
+.step-line { flex:1; height:3px; background:#e4eaf0; border-radius:3px; margin-bottom:22px; }
+.step-line.done { background:linear-gradient(90deg,#03C75A,#00BCD4); }
+@keyframes pulse-step { 0%,100%{box-shadow:0 4px 18px rgba(3,199,90,0.4);} 50%{box-shadow:0 4px 28px rgba(3,199,90,0.65),0 0 0 7px rgba(3,199,90,0.1);} }
+
+/* ═══ 제품 카드 ════════════════════════════════════════════ */
+.pcard { border-radius:18px; background:white; box-shadow:0 2px 14px rgba(0,0,0,0.07); overflow:hidden; transition:all 0.22s cubic-bezier(0.25,0.8,0.25,1); cursor:pointer; position:relative; border:2px solid transparent; margin-bottom:4px; }
+.pcard:hover { transform:translateY(-5px); box-shadow:0 14px 36px rgba(0,0,0,0.13); }
+.pcard.pcard-sel { border-color:#03C75A; box-shadow:0 0 0 4px rgba(3,199,90,0.12),0 10px 30px rgba(3,199,90,0.2); }
+.pcard-img-wrap { position:relative; overflow:hidden; }
+.pcard-img-wrap img { width:100%; height:130px; object-fit:cover; display:block; transition:transform 0.3s ease; }
+.pcard:hover .pcard-img-wrap img { transform:scale(1.05); }
+.pcard-img-placeholder { height:130px; background:linear-gradient(135deg,#f0f4f8,#e4eaf0); display:flex; align-items:center; justify-content:center; font-size:2rem; color:#c0ccd8; }
+.pcard-price-overlay { position:absolute; bottom:0; left:0; right:0; background:linear-gradient(0deg,rgba(10,20,35,0.82) 0%,transparent 100%); padding:22px 10px 8px; }
+.pcard-price-overlay span { color:white; font-size:1rem; font-weight:800; text-shadow:0 1px 4px rgba(0,0,0,0.4); }
+.pcard-check { position:absolute; top:9px; right:9px; width:28px; height:28px; background:linear-gradient(135deg,#03C75A,#00BCD4); border-radius:50%; display:flex; align-items:center; justify-content:center; color:white; font-size:13px; font-weight:900; box-shadow:0 3px 10px rgba(3,199,90,0.5); animation:pop-in 0.25s cubic-bezier(0.34,1.56,0.64,1); }
+@keyframes pop-in { from{transform:scale(0);opacity:0;} to{transform:scale(1);opacity:1;} }
+.pcard-body { padding:10px 10px 8px; }
+.pcard-name { font-size:0.77rem; font-weight:600; line-height:1.38; color:#1a2840; min-height:2.4em; }
+.pcard-brand { font-size:0.68rem; color:#8fafc8; margin-top:3px; font-weight:500; }
+.pcard-rating { font-size:0.69rem; color:#6b7c93; margin-top:5px; }
+
+/* ═══ 키워드 칩 ════════════════════════════════════════════ */
+.kw-chip { display:inline-block; background:linear-gradient(135deg,#edfaf3,#e4f7f5); border:1px solid rgba(3,199,90,0.4); color:#047a42; padding:5px 14px; border-radius:20px; margin:3px; font-size:0.81rem; font-weight:600; box-shadow:0 1px 4px rgba(3,199,90,0.12); }
+
+/* ═══ 스코어바 ════════════════════════════════════════════ */
+.sbar-wrap { background:#e8edf2; border-radius:6px; overflow:hidden; height:7px; margin-top:4px; }
+.sbar-fill { height:7px; border-radius:6px; background:linear-gradient(90deg,#03C75A,#00BCD4); }
+.comp-badge { display:inline-block; padding:2px 8px; border-radius:12px; font-size:0.68rem; font-weight:700; }
+.comp-low  { background:#e8f8f0; color:#1b7a42; }
+.comp-mid  { background:#fff3e0; color:#c05c00; }
+.comp-high { background:#fdecea; color:#c12020; }
+.blog-fire { color:#ff6b35; font-weight:700; font-size:0.78rem; }
+
+/* ═══ 통계 카드 ════════════════════════════════════════════ */
+.stat-card { background:white; border:none; border-radius:18px; padding:1rem; text-align:center; box-shadow:0 3px 16px rgba(0,0,0,0.08); }
+.stat-num  { font-size:1.5rem; font-weight:900; background:linear-gradient(135deg,#03C75A,#00BCD4); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+.stat-lbl  { font-size:0.72rem; color:#8fafc8; margin-top:2px; font-weight:600; }
+
+/* ═══ 포스트 박스 ══════════════════════════════════════════ */
+.post-box { background:white; border:1px solid #e4eaf0; border-radius:18px; padding:1.4rem 1.6rem; white-space:pre-wrap; font-size:0.92rem; line-height:1.9; max-height:580px; overflow-y:auto; box-shadow:0 3px 16px rgba(0,0,0,0.05); }
+
+/* ═══ 메인 키워드 배지 ════════════════════════════════════ */
+.kw-meta-card { background:linear-gradient(135deg,#f0fdf6,#e8f9f7); border:1px solid rgba(3,199,90,0.3); border-radius:14px; padding:12px 16px; margin-bottom:10px; box-shadow:0 2px 10px rgba(3,199,90,0.1); }
+
+/* ═══ 기타 ════════════════════════════════════════════════ */
+.info-block { background:#f0faf5; border-left:4px solid #03C75A; padding:0.6rem 0.9rem; border-radius:6px; margin:4px 0; }
+.err-box { background:#fff3f3; border:1px solid #f5c6c6; border-radius:18px; padding:1.4rem; text-align:center; }
+.block-container { padding-top:2rem !important; padding-bottom:1rem !important; }
+section[data-testid="stSidebar"] .block-container { padding-top:0 !important; }
+div[data-testid="stVerticalBlock"] > div { gap:0.28rem; }
+hr { margin:0.6rem 0 !important; border-color:#e4eaf0 !important; }
+.home-cta > div > button { font-size:1.05rem !important; height:3rem !important; }
+.type-tile { border-radius:20px; padding:20px 8px; text-align:center; cursor:pointer; transition:all 0.2s cubic-bezier(0.25,0.8,0.25,1); background:white; box-shadow:0 3px 14px rgba(0,0,0,0.07); }
+.type-tile:hover { transform:translateY(-4px); box-shadow:0 10px 30px rgba(0,0,0,0.12); }
 </style>
 """, unsafe_allow_html=True)
 
@@ -122,10 +170,15 @@ def step_bar(current: int):
     labels = ["입력", "제품 확인", "글 작성", "완료"]
     html = '<div class="step-bar">'
     for i, label in enumerate(labels):
-        cls = "done" if i < current else ("active" if i == current else "")
-        icon = "✓" if i < current else str(i + 1)
-        html += f'<div class="step-dot {cls}">{icon}</div>'
-        html += f'<span style="font-size:0.8rem;color:{"#03C75A" if i<=current else "#aaa"}">{label}</span>'
+        dot_cls  = "done" if i < current else ("active" if i == current else "")
+        lbl_cls  = "done" if i < current else ("active" if i == current else "")
+        icon     = "✓" if i < current else str(i + 1)
+        html += (
+            f'<div class="step-wrap">'
+            f'<div class="step-dot {dot_cls}">{icon}</div>'
+            f'<span class="step-lbl {lbl_cls}">{label}</span>'
+            f'</div>'
+        )
         if i < len(labels) - 1:
             line_cls = "done" if i < current else ""
             html += f'<div class="step-line {line_cls}"></div>'
@@ -183,36 +236,39 @@ def render_product_cards(results: list, key_prefix: str, sel_key: str):
                     and sel.get("price") == product.get("price")
                     and sel.get("name") == product.get("name")
                 )
-                border = "#03C75A" if is_sel else "#e0e0e0"
-                bg = "#f0faf4" if is_sel else "#ffffff"
-
-                # 이미지
-                image = product.get("image", "")
-                if image:
-                    try:
-                        st.image(image, use_container_width=True)
-                    except Exception:
-                        st.markdown('<div style="height:80px;background:#f5f5f5;border-radius:6px;"></div>',
-                                    unsafe_allow_html=True)
-                else:
-                    st.markdown('<div style="height:80px;background:#f5f5f5;border-radius:6px;"></div>',
-                                unsafe_allow_html=True)
-
-                name = product.get("name", "")
-                short = (name[:26] + "…") if len(name) > 26 else name
+                name  = product.get("name", "")
+                short = (name[:28] + "…") if len(name) > 28 else name
                 price = product.get("price", "")
-                rt = product.get("rating", "")
-                rc = product.get("review_count", "")
+                rt    = product.get("rating", "")
+                rc    = product.get("review_count", "")
                 brand = product.get("brand", "") or product.get("mall_name", "")
+                img   = product.get("image", "")
+
+                card_cls = "pcard pcard-sel" if is_sel else "pcard"
+                check_html = '<div class="pcard-check">✓</div>' if is_sel else ""
+
+                if img:
+                    img_html = (
+                        f'<div class="pcard-img-wrap">'
+                        f'<img src="{img}" onerror="this.parentNode.innerHTML=\'<div class=pcard-img-placeholder>🛍️</div>\'">'
+                        + (f'<div class="pcard-price-overlay"><span>{price}원</span></div>' if price else "")
+                        + f'</div>'
+                    )
+                else:
+                    img_html = (
+                        f'<div class="pcard-img-placeholder">🛍️</div>'
+                        + (f'<div style="padding:4px 10px 0;color:#e53935;font-size:0.95rem;font-weight:800;">{price}원</div>' if price else "")
+                    )
 
                 st.markdown(
-                    f'<div style="border:2px solid {border};background:{bg};border-radius:8px;'
-                    f'padding:8px;margin:2px 0;">'
-                    f'<div style="font-size:0.78rem;font-weight:600;min-height:2.2em;line-height:1.3;color:#1a1a1a;">{short}</div>'
-                    + (f'<div style="font-size:0.7rem;color:#888;margin-top:2px;">{brand}</div>' if brand else '')
-                    + (f'<div style="color:#e53935;font-size:1rem;font-weight:800;margin:4px 0;">{price}원</div>' if price else '')
-                    + (f'<div style="font-size:0.7rem;color:#666;">⭐{rt}' + (f' · {rc}개' if rc else '') + '</div>' if rt or rc else '')
-                    + '</div>',
+                    f'<div class="{card_cls}">'
+                    + check_html
+                    + img_html
+                    + f'<div class="pcard-body">'
+                    + f'<div class="pcard-name">{short}</div>'
+                    + (f'<div class="pcard-brand">{brand}</div>' if brand else "")
+                    + (f'<div class="pcard-rating">⭐ {rt}' + (f' <span style="color:#c0ccd8;">· {rc}개</span>' if rc else "") + "</div>" if rt or rc else "")
+                    + "</div></div>",
                     unsafe_allow_html=True,
                 )
 
@@ -266,10 +322,18 @@ with st.sidebar:
 
         # 메인 키워드는 URL에서 자동 추출 후 표시 (읽기 전용)
         if st.session_state.keyword and disabled:
+            _m = st.session_state.get("kw_main_meta", {})
+            _tot = _m.get("total", 0)
+            _sc  = _m.get("score", 0)
             st.markdown(
-                f'<div style="background:#f0faf4;border:1px solid #03C75A;border-radius:6px;'
-                f'padding:6px 10px;font-size:0.82rem;color:#03C75A;margin-bottom:6px;">'
-                f'🎯 메인 키워드: <b>{st.session_state.keyword}</b></div>',
+                f'<div style="background:linear-gradient(135deg,rgba(3,199,90,0.12),rgba(0,188,212,0.08));'
+                f'border:1px solid rgba(3,199,90,0.35);border-radius:10px;'
+                f'padding:10px 12px;margin-bottom:8px;">'
+                f'<div style="font-size:0.66rem;color:#5aaa7a;font-weight:700;letter-spacing:0.4px;margin-bottom:3px;">🎯 메인 키워드</div>'
+                f'<div style="font-size:0.9rem;font-weight:800;color:#e8f8f0;">{st.session_state.keyword}</div>'
+                + (f'<div style="font-size:0.68rem;color:#7abf9a;margin-top:3px;">📊 {_tot:,}회/월'
+                   + (f' · 점수 {_sc:.1f}' if _sc else '') + '</div>' if _tot else '')
+                + '</div>',
                 unsafe_allow_html=True,
             )
 
@@ -520,20 +584,31 @@ body{font-family:-apple-system,'Noto Sans KR',sans-serif;background:#fff;
 elif st.session_state.step == 0:
     show_tool_header()
     st.markdown(
-        '<div style="display:flex;align-items:center;justify-content:center;'
-        'min-height:300px;">'
-        '<div style="max-width:480px;text-align:center;padding:32px;">'
-        '<div style="font-size:3.5rem;margin-bottom:16px;">✍️</div>'
-        '<div style="font-size:1.3rem;font-weight:800;color:#1a1a1a;margin-bottom:10px;">'
-        '사이드바에서 정보를 입력하세요</div>'
-        '<div style="font-size:.88rem;color:#666;line-height:1.8;margin-bottom:24px;">'
+        '<div style="display:flex;align-items:center;justify-content:center;min-height:340px;">'
+        '<div style="max-width:500px;text-align:center;padding:36px 24px;">'
+        '<div style="width:80px;height:80px;background:linear-gradient(135deg,#03C75A,#00BCD4);'
+        'border-radius:50%;display:flex;align-items:center;justify-content:center;'
+        'font-size:2.2rem;margin:0 auto 20px;box-shadow:0 8px 28px rgba(3,199,90,0.3);">✍️</div>'
+        '<div style="font-size:1.35rem;font-weight:900;color:#1a2840;margin-bottom:10px;letter-spacing:-0.3px;">'
+        '사이드바에서 URL을 입력하세요</div>'
+        '<div style="font-size:0.86rem;color:#6b7c93;line-height:1.85;margin-bottom:28px;">'
         '← 왼쪽 사이드바에 Brand Connect URL을 입력한 후<br>'
-        '<strong style="color:#03C75A;">➡️ 분석 시작</strong> 버튼을 클릭하면 키워드부터 제품 검색까지 자동으로 진행됩니다.</div>'
-        '<div style="display:flex;flex-direction:column;gap:8px;text-align:left;'
-        'background:#f8f8f8;border-radius:12px;padding:16px;">'
-        '<div style="font-size:.8rem;color:#555;">🔗 <b>Brand Connect URL</b> — 제품 링크만 입력하면 끝!</div>'
-        '<div style="font-size:.8rem;color:#555;">🎯 <b>메인 키워드</b> — URL에서 자동 추출 + 검색량 분석</div>'
-        '<div style="font-size:.8rem;color:#555;">📂 <b>카테고리 / 글 유형</b> — 이미 선택됨</div>'
+        '<strong style="color:#03C75A;">➡️ 분석 시작</strong>을 누르면 모든 것이 자동으로 진행됩니다.</div>'
+        '<div style="display:flex;flex-direction:column;gap:10px;text-align:left;'
+        'background:white;border-radius:16px;padding:18px 20px;'
+        'box-shadow:0 3px 16px rgba(0,0,0,0.07);">'
+        '<div style="display:flex;align-items:center;gap:10px;">'
+        '<span style="font-size:1.1rem;">🔗</span>'
+        '<div><div style="font-size:0.8rem;font-weight:700;color:#1a2840;">Brand Connect URL</div>'
+        '<div style="font-size:0.73rem;color:#8fafc8;">제품 링크만 입력하면 끝!</div></div></div>'
+        '<div style="display:flex;align-items:center;gap:10px;">'
+        '<span style="font-size:1.1rem;">🎯</span>'
+        '<div><div style="font-size:0.8rem;font-weight:700;color:#1a2840;">메인 키워드 자동 추출</div>'
+        '<div style="font-size:0.73rem;color:#8fafc8;">검색량 × 경쟁도 × 관련성 스코어링</div></div></div>'
+        '<div style="display:flex;align-items:center;gap:10px;">'
+        '<span style="font-size:1.1rem;">🔥</span>'
+        '<div><div style="font-size:0.8rem;font-weight:700;color:#1a2840;">경쟁 블로그 분석</div>'
+        '<div style="font-size:0.73rem;color:#8fafc8;">상위 블로그 출현 키워드 부스팅</div></div></div>'
         '</div></div></div>',
         unsafe_allow_html=True,
     )
@@ -853,70 +928,84 @@ elif st.session_state.step == 1:
                     render_product_cards(comp_results, f"c{ci}", sel_key)
 
     # ── 키워드 스코어 대시보드 ───────────────────────────
-    _kw_meta = st.session_state.get("kw_main_meta", {})
+    _kw_meta   = st.session_state.get("kw_main_meta", {})
     _kw_scored = st.session_state.get("kw_scored", [])
     if _kw_meta or st.session_state.sub_keywords:
         st.divider()
         st.markdown("#### 🔑 키워드 분석 결과")
 
-        # 메인 키워드 메타 배지
+        # ── 메인 키워드 배지 카드 ──────────────────────
         if _kw_meta:
-            _comp = _kw_meta.get("competition", "")
+            _comp  = _kw_meta.get("competition", "")
             _total = _kw_meta.get("total", 0)
             _score = _kw_meta.get("score", 0)
-            _comp_color = {"낮음": "#2e7d32", "중간": "#e65100", "높음": "#c62828"}.get(_comp, "#555")
+            _comp_badge_cls = {"낮음": "comp-badge comp-low", "중간": "comp-badge comp-mid", "높음": "comp-badge comp-high"}.get(_comp, "comp-badge")
             st.markdown(
-                f'<div style="background:#f0faf4;border:1px solid #03C75A;border-radius:8px;'
-                f'padding:10px 14px;margin-bottom:8px;">'
-                f'<span style="font-size:0.8rem;color:#555;">🎯 메인 키워드</span><br>'
-                f'<span style="font-size:1.1rem;font-weight:800;color:#03C75A;">'
-                f'{st.session_state.keyword}</span>'
-                + (f'&nbsp;&nbsp;<span style="font-size:0.78rem;color:#555;">검색량 <b>{_total:,}회/월</b></span>' if _total else '')
-                + (f'&nbsp;&nbsp;<span style="font-size:0.78rem;color:{_comp_color};font-weight:700;">경쟁도 {_comp}</span>' if _comp else '')
-                + (f'&nbsp;&nbsp;<span style="font-size:0.78rem;color:#888;">점수 {_score:.1f}</span>' if _score else '')
-                + '</div>',
+                f'<div class="kw-meta-card">'
+                f'<div style="font-size:0.72rem;color:#6b9c7a;font-weight:700;letter-spacing:0.5px;margin-bottom:4px;">🎯 메인 키워드</div>'
+                f'<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">'
+                f'<span style="font-size:1.15rem;font-weight:900;background:linear-gradient(90deg,#03C75A,#00BCD4);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">{st.session_state.keyword}</span>'
+                + (f'<span style="font-size:0.78rem;color:#2d6a4f;font-weight:600;">📊 {_total:,}회/월</span>' if _total else '')
+                + (f'<span class="{_comp_badge_cls}">경쟁도 {_comp}</span>' if _comp else '')
+                + (f'<span style="font-size:0.75rem;color:#8fafc8;">점수 {_score:.1f}</span>' if _score else '')
+                + '</div></div>',
                 unsafe_allow_html=True,
             )
 
-        # 서브키워드 스코어 테이블
+        # ── 서브키워드 스코어 카드 리스트 ──────────────
         if _kw_scored:
             top_sub = [k for k in _kw_scored if k.get("total", 0) > 100][:12]
             if top_sub:
+                max_score = max((k.get("score", 0) for k in top_sub), default=1) or 1
                 rows_html = ""
                 for k in top_sub:
                     kw_text = k.get("keyword", "")
-                    total = k.get("total", 0)
-                    comp = k.get("competition", "")
-                    sc = k.get("score", 0)
-                    bc = k.get("blog_count", 0)
-                    comp_color = {"낮음": "#2e7d32", "중간": "#e65100", "높음": "#c62828"}.get(comp, "#555")
-                    is_selected = kw_text in st.session_state.sub_keywords
-                    bg = "#f0faf4" if is_selected else "#fff"
-                    star = "⭐" * min(bc, 5) if bc else ""
+                    total   = k.get("total", 0)
+                    comp    = k.get("competition", "")
+                    sc      = k.get("score", 0)
+                    bc      = k.get("blog_count", 0)
+                    is_sel  = kw_text in st.session_state.sub_keywords
+                    bar_pct = int(sc / max_score * 100)
+                    badge_cls = {"낮음": "comp-badge comp-low", "중간": "comp-badge comp-mid", "높음": "comp-badge comp-high"}.get(comp, "comp-badge")
+                    fire_html = f'<span class="blog-fire">{"🔥" * min(bc, 5)}&nbsp;{bc}</span>' if bc else '<span style="color:#c0ccd8;font-size:0.72rem;">—</span>'
+                    row_bg = "linear-gradient(90deg,rgba(3,199,90,0.06),rgba(0,188,212,0.04))" if is_sel else "white"
+
                     rows_html += (
-                        f'<tr style="background:{bg};">'
-                        f'<td style="padding:5px 8px;font-size:0.82rem;font-weight:{"700" if is_selected else "400"};">'
-                        f'{"✅ " if is_selected else ""}{kw_text}</td>'
-                        f'<td style="padding:5px 8px;font-size:0.78rem;color:#555;text-align:right;">{total:,}</td>'
-                        f'<td style="padding:5px 8px;font-size:0.78rem;color:{comp_color};text-align:center;">{comp}</td>'
-                        f'<td style="padding:5px 8px;font-size:0.78rem;color:#888;text-align:center;">{star or "-"}</td>'
-                        f'<td style="padding:5px 8px;font-size:0.82rem;font-weight:700;color:#03C75A;text-align:right;">{sc:.1f}</td>'
-                        f'</tr>'
+                        f'<div style="display:grid;grid-template-columns:1fr 90px 64px 60px 56px;'
+                        f'align-items:center;gap:10px;padding:9px 14px;background:{row_bg};'
+                        f'border-bottom:1px solid #f0f4f8;">'
+                        # 키워드 + 바
+                        f'<div>'
+                        f'<div style="font-size:0.8rem;font-weight:{"700" if is_sel else "500"};color:#1a2840;">'
+                        f'{"<span style=\'color:#03C75A;\'>✓ </span>" if is_sel else ""}{kw_text}</div>'
+                        f'<div class="sbar-wrap"><div class="sbar-fill" style="width:{bar_pct}%;"></div></div>'
+                        f'</div>'
+                        # 검색량
+                        f'<div style="font-size:0.76rem;color:#6b7c93;text-align:right;font-weight:500;">{total:,}</div>'
+                        # 경쟁도
+                        f'<div style="text-align:center;"><span class="{badge_cls}">{comp or "—"}</span></div>'
+                        # 블로그
+                        f'<div style="text-align:center;">{fire_html}</div>'
+                        # 점수
+                        f'<div style="text-align:right;font-size:0.82rem;font-weight:800;background:linear-gradient(135deg,#03C75A,#00BCD4);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">{sc:.1f}</div>'
+                        f'</div>'
                     )
+
                 st.markdown(
-                    '<table style="width:100%;border-collapse:collapse;border:1px solid #e0e0e0;'
-                    'border-radius:8px;overflow:hidden;">'
-                    '<thead><tr style="background:#f5f5f5;">'
-                    '<th style="padding:6px 8px;font-size:0.75rem;text-align:left;">키워드</th>'
-                    '<th style="padding:6px 8px;font-size:0.75rem;text-align:right;">검색량/월</th>'
-                    '<th style="padding:6px 8px;font-size:0.75rem;text-align:center;">경쟁도</th>'
-                    '<th style="padding:6px 8px;font-size:0.75rem;text-align:center;">블로그★</th>'
-                    '<th style="padding:6px 8px;font-size:0.75rem;text-align:right;">점수</th>'
-                    '</tr></thead>'
-                    f'<tbody>{rows_html}</tbody></table>',
+                    f'<div style="background:white;border-radius:16px;overflow:hidden;'
+                    f'box-shadow:0 3px 16px rgba(0,0,0,0.07);margin-bottom:6px;">'
+                    f'<div style="display:grid;grid-template-columns:1fr 90px 64px 60px 56px;'
+                    f'gap:10px;padding:8px 14px;background:#f8fafc;border-bottom:2px solid #f0f4f8;">'
+                    f'<div style="font-size:0.69rem;font-weight:700;color:#8fafc8;letter-spacing:0.5px;">키워드</div>'
+                    f'<div style="font-size:0.69rem;font-weight:700;color:#8fafc8;text-align:right;">검색량/월</div>'
+                    f'<div style="font-size:0.69rem;font-weight:700;color:#8fafc8;text-align:center;">경쟁도</div>'
+                    f'<div style="font-size:0.69rem;font-weight:700;color:#8fafc8;text-align:center;">블로그</div>'
+                    f'<div style="font-size:0.69rem;font-weight:700;color:#8fafc8;text-align:right;">점수</div>'
+                    f'</div>'
+                    f'{rows_html}</div>',
                     unsafe_allow_html=True,
                 )
-                st.caption("✅ = 글에 포함될 서브키워드 | 블로그★ = 상위 블로그 출현 횟수 (최대5)")
+                st.caption("✓ 체크 = 글에 포함될 서브키워드 | 🔥 = 상위 블로그 출현 횟수")
         elif st.session_state.sub_keywords:
             render_kw_chips(st.session_state.sub_keywords)
 
