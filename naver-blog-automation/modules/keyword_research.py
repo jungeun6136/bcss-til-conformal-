@@ -7,7 +7,7 @@ from typing import List, Dict
 
 
 class NaverKeywordResearch:
-    BASE_URL = "https://api.naver.com"
+    BASE_URL = "https://api.searchad.naver.com"
 
     def __init__(self, api_key: str, secret_key: str, customer_id: str):
         self.api_key = api_key

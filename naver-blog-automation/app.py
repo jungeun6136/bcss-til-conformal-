@@ -3,7 +3,7 @@ import streamlit.components.v1 as components
 import os
 import sys
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, date, time, timedelta
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -15,6 +15,8 @@ from modules.image_downloader import ImageDownloader
 from modules.content_generator import ContentGenerator
 from modules.competitor_researcher import CompetitorResearcher
 from modules.blog_analyzer import BlogAnalyzer
+from modules.blog_poster import NaverBlogPoster
+from modules.post_scheduler import PostScheduler
 from modules.html_formatter import to_naver_html
 from modules.templates import CATEGORIES, POST_TYPES
 
@@ -116,7 +118,7 @@ hr { margin:0.6rem 0 !important; border-color:#e4eaf0 !important; }
 
 # ── 세션 상태 초기화 ─────────────────────────────────
 DEFAULTS = {
-    "page": "home",      # "home"=랜딩 "tool"=도구
+    "page": "home",      # "home"=랜딩 "tool"=도구 "scheduler"=스케줄러
     "step": 0,           # 0=입력 1=제품확인 2=글생성중 3=완료 -1=오류
     "keyword": "",
     "brand_url": "",
@@ -153,6 +155,19 @@ for k, v in DEFAULTS.items():
 def reset():
     for k, v in DEFAULTS.items():
         st.session_state[k] = v
+
+
+@st.cache_resource
+def get_scheduler() -> PostScheduler:
+    """Streamlit 재실행과 무관하게 싱글톤 유지 — 백그라운드 타이머 포함"""
+    _poster = NaverBlogPoster(str(Path(__file__).parent / "poster_data"))
+    _sched  = PostScheduler(
+        str(Path(__file__).parent / "poster_data" / "schedule.db"),
+        _poster,
+    )
+    _nid = os.getenv("NAVER_ID", "")
+    _sched.start_background(naver_id=_nid, interval_sec=60)
+    return _sched
 
 
 def check_env():
@@ -305,9 +320,17 @@ with st.sidebar:
         st.markdown("### ✍️ 네이버 블로그 자동화")
         st.markdown("---")
 
-        if st.button("🏠 홈으로 돌아가기", use_container_width=True):
-            reset()
-            st.rerun()
+        sb_c1, sb_c2 = st.columns(2)
+        with sb_c1:
+            if st.button("🏠 홈", use_container_width=True):
+                reset()
+                st.rerun()
+        with sb_c2:
+            _sched_cnt = get_scheduler().counts().get("pending", 0)
+            _badge = f" ({_sched_cnt})" if _sched_cnt else ""
+            if st.button(f"📅 스케줄러{_badge}", use_container_width=True):
+                st.session_state.page = "scheduler"
+                st.rerun()
 
         st.markdown("---")
 
@@ -1228,9 +1251,239 @@ elif st.session_state.step == 3:
         else:
             st.info("다운로드된 이미지가 없습니다. 직접 제품 이미지를 추가해주세요.")
 
+    # ════════════════════════════════════════════════
+    # 자동 발행 섹션
+    # ════════════════════════════════════════════════
+    st.divider()
+    st.markdown("### 🚀 네이버 블로그 자동 발행")
+
+    _naver_id = os.getenv("NAVER_ID", "")
+    _naver_pw = os.getenv("NAVER_PW", "")
+    _poster   = NaverBlogPoster(str(Path(__file__).parent / "poster_data"))
+
+    # 상태 카드 3개
+    pc1, pc2, pc3 = st.columns(3)
+    with pc1:
+        _login_status = "✅ 로그인됨" if _poster.is_logged_in() else "❌ 미로그인"
+        st.markdown(
+            f'<div class="stat-card"><div class="stat-num" style="font-size:1.1rem;">{_login_status}</div>'
+            f'<div class="stat-lbl">로그인 상태</div></div>',
+            unsafe_allow_html=True,
+        )
+    with pc2:
+        _today = _poster.today_count()
+        st.markdown(
+            f'<div class="stat-card"><div class="stat-num">{_today}/{_poster.MAX_DAILY}</div>'
+            f'<div class="stat-lbl">오늘 발행</div></div>',
+            unsafe_allow_html=True,
+        )
+    with pc3:
+        _rem = _poster.remaining()
+        _rem_color = "#03C75A" if _rem > 0 else "#e53935"
+        st.markdown(
+            f'<div class="stat-card"><div class="stat-num" style="color:{_rem_color};">{_rem}개</div>'
+            f'<div class="stat-lbl">남은 발행 횟수</div></div>',
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+
+    if not _naver_id or not _naver_pw:
+        st.warning(
+            "📋 `.env` 파일에 `NAVER_ID`와 `NAVER_PW`를 추가하면 자동 발행이 활성화됩니다.",
+            icon="ℹ️",
+        )
+    elif not _poster.is_logged_in():
+        st.info("네이버에 로그인하면 자동 발행 버튼이 활성화됩니다.", icon="🔑")
+        if st.button("🔑 네이버 로그인하기", use_container_width=True):
+            with st.spinner("브라우저를 열어 로그인 중... (캡챠/2FA 발생 시 직접 처리하세요)"):
+                _ok, _msg = _poster.login(_naver_id, _naver_pw)
+            if _ok:
+                st.success(_msg)
+                st.rerun()
+            else:
+                st.error(_msg)
+    else:
+        _col_post, _col_sched, _col_logout = st.columns([2, 2, 1])
+        _title_for_post = post.split("\n")[0].strip().lstrip("#").strip() or st.session_state.keyword
+
+        with _col_post:
+            _can = _poster.can_post()
+            if st.button(
+                "🚀 지금 바로 발행",
+                type="primary",
+                use_container_width=True,
+                disabled=not _can,
+            ):
+                with st.spinner("블로그에 발행 중... 브라우저가 잠시 열립니다."):
+                    _ok, _msg = _poster.post(
+                        title=_title_for_post,
+                        content=post,
+                        images=st.session_state.saved_images,
+                        naver_id=_naver_id,
+                    )
+                if _ok:
+                    st.success(f"✅ {_msg}")
+                else:
+                    st.error(f"발행 실패: {_msg}")
+                st.rerun()
+            if not _can:
+                st.caption(f"오늘 한도({_poster.MAX_DAILY}개) 도달")
+
+        with _col_sched:
+            if st.button("📅 예약 발행", use_container_width=True):
+                st.session_state["_show_sched_picker"] = not st.session_state.get("_show_sched_picker", False)
+                st.rerun()
+
+        with _col_logout:
+            if st.button("로그아웃", use_container_width=True):
+                _poster.clear_login()
+                st.rerun()
+
+        # ── 예약 시간 선택 팝업 ───────────────────────
+        if st.session_state.get("_show_sched_picker", False):
+            with st.container():
+                st.markdown(
+                    '<div style="background:white;border:1px solid #e4eaf0;border-radius:14px;padding:16px;margin-top:8px;">',
+                    unsafe_allow_html=True,
+                )
+                st.markdown("**📅 예약 발행 시간 설정**")
+                _sp_c1, _sp_c2 = st.columns(2)
+                with _sp_c1:
+                    _sched_date = st.date_input(
+                        "날짜", value=date.today() + timedelta(days=1),
+                        min_value=date.today(), key="sched_date"
+                    )
+                with _sp_c2:
+                    _sched_time = st.time_input(
+                        "시간", value=time(9, 0), key="sched_time"
+                    )
+                _sched_dt = datetime.combine(_sched_date, _sched_time)
+                st.caption(f"예약 시간: **{_sched_dt.strftime('%Y-%m-%d %H:%M')}**  |  앱이 실행 중이어야 발행됩니다.")
+                _qa, _qb = st.columns(2)
+                with _qa:
+                    if st.button("✅ 예약 등록", type="primary", use_container_width=True, key="sched_confirm"):
+                        _sched = get_scheduler()
+                        _qid = _sched.add(
+                            title=_title_for_post,
+                            content=post,
+                            scheduled_at=_sched_dt,
+                            images=st.session_state.saved_images,
+                            keyword=st.session_state.keyword,
+                        )
+                        st.session_state["_show_sched_picker"] = False
+                        st.success(f"✅ 예약 완료! ({_sched_dt.strftime('%m/%d %H:%M')}) — 스케줄러에서 확인하세요.")
+                        st.rerun()
+                with _qb:
+                    if st.button("취소", use_container_width=True, key="sched_cancel"):
+                        st.session_state["_show_sched_picker"] = False
+                        st.rerun()
+                st.markdown("</div>", unsafe_allow_html=True)
+
     st.divider()
     if st.button("🏠 새 글 작성하기 (처음으로)", type="primary"):
         reset()
+        st.rerun()
+
+
+# ════════════════════════════════════════════════
+# PAGE: SCHEDULER — 예약 발행 관리
+# ════════════════════════════════════════════════
+elif st.session_state.page == "scheduler":
+    st.markdown('<div class="main-title">📅 예약 발행 스케줄러</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-title">예약된 글을 관리하고 발행 현황을 확인하세요</div>', unsafe_allow_html=True)
+    st.divider()
+
+    _sched = get_scheduler()
+    _cnts  = _sched.counts()
+    _nid   = os.getenv("NAVER_ID", "")
+
+    # 상태 카드
+    _s1, _s2, _s3, _s4 = st.columns(4)
+    for _col, _label, _key, _color in [
+        (_s1, "대기 중",  "pending",   "#03C75A"),
+        (_s2, "발행 완료", "done",      "#00BCD4"),
+        (_s3, "실패",     "failed",    "#e53935"),
+        (_s4, "취소됨",   "cancelled", "#9e9e9e"),
+    ]:
+        _n = _cnts.get(_key, 0)
+        with _col:
+            st.markdown(
+                f'<div class="stat-card">'
+                f'<div class="stat-num" style="background:none;-webkit-text-fill-color:{_color};color:{_color};">{_n}</div>'
+                f'<div class="stat-lbl">{_label}</div></div>',
+                unsafe_allow_html=True,
+            )
+
+    # 스케줄러 실행 상태
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+    _is_run = _sched.is_running()
+    st.markdown(
+        f'<div style="display:inline-flex;align-items:center;gap:8px;'
+        f'background:{"#f0fdf6" if _is_run else "#fff3f3"};'
+        f'border:1px solid {"#03C75A" if _is_run else "#ffcdd2"};'
+        f'border-radius:20px;padding:6px 14px;font-size:0.8rem;font-weight:600;">'
+        f'<span style="width:8px;height:8px;border-radius:50%;background:{"#03C75A" if _is_run else "#e53935"};'
+        f'display:inline-block;{"animation:pulse-step 1.5s infinite;" if _is_run else ""}"></span>'
+        f'{"⚡ 스케줄러 실행 중 · 60초마다 체크" if _is_run else "⏸ 스케줄러 중지됨 — 앱을 실행해야 예약 발행이 작동합니다"}'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+    st.divider()
+
+    # 큐 목록
+    _all = _sched.get_all()
+    if not _all:
+        st.info("예약된 글이 없습니다. 글 작성 완료 후 '📅 예약 발행' 버튼으로 등록하세요.", icon="📭")
+    else:
+        _STATUS_LABEL = {
+            "pending":   ("🕐", "#e65100", "대기 중"),
+            "done":      ("✅", "#006644", "완료"),
+            "failed":    ("❌", "#c62828", "실패"),
+            "cancelled": ("⊘",  "#757575", "취소"),
+        }
+        for _item in _all:
+            _sid     = _item["id"]
+            _st_key  = _item["status"]
+            _icon, _color, _st_txt = _STATUS_LABEL.get(_st_key, ("?", "#555", _st_key))
+            _sched_t = _item["scheduled_at"][:16].replace("T", " ")
+            _title   = _item["title"][:40] + ("…" if len(_item["title"]) > 40 else "")
+            _kw      = _item.get("keyword", "")
+            _msg     = _item.get("result_msg", "")
+
+            with st.container():
+                _ca, _cb, _cc = st.columns([5, 2, 1])
+                with _ca:
+                    st.markdown(
+                        f'<div style="background:white;border-radius:12px;padding:12px 14px;'
+                        f'border-left:4px solid {_color};box-shadow:0 2px 8px rgba(0,0,0,0.06);margin-bottom:6px;">'
+                        f'<div style="font-size:0.85rem;font-weight:700;color:#1a2840;margin-bottom:3px;">{_icon} {_title}</div>'
+                        + (f'<div style="font-size:0.72rem;color:#8fafc8;">🎯 {_kw}</div>' if _kw else '')
+                        + (f'<div style="font-size:0.72rem;color:{_color};margin-top:2px;">{_msg}</div>' if _msg else '')
+                        + f'</div>',
+                        unsafe_allow_html=True,
+                    )
+                with _cb:
+                    st.markdown(
+                        f'<div style="padding:12px 0;font-size:0.78rem;color:#6b7c93;">'
+                        f'<div style="font-weight:700;color:{_color};">{_st_txt}</div>'
+                        f'<div>🕐 {_sched_t}</div></div>',
+                        unsafe_allow_html=True,
+                    )
+                with _cc:
+                    if _st_key == "pending":
+                        if st.button("취소", key=f"cancel_{_sid}", use_container_width=True):
+                            _sched.cancel(_sid)
+                            st.rerun()
+                    else:
+                        if st.button("삭제", key=f"del_{_sid}", use_container_width=True):
+                            _sched.delete(_sid)
+                            st.rerun()
+
+    st.divider()
+    if st.button("← 도구로 돌아가기", use_container_width=True):
+        st.session_state.page = "tool"
         st.rerun()
 
 
