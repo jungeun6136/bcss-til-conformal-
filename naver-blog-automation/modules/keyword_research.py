@@ -67,6 +67,55 @@ class NaverKeywordResearch:
         # 메인 키워드 자신 제외하고 반환
         return [k for k in keywords if k["keyword"] != keyword][:top_n]
 
+    def select_main_keyword(self, keywords: List[Dict], product_name: str = "") -> Dict:
+        """검색량 × 경쟁도 × 관련성 스코어로 최적 메인 키워드 선택"""
+        if not keywords:
+            return {}
+
+        prod_words = [w for w in product_name.split() if len(w) >= 2] if product_name else []
+        COMP_WEIGHT = {"낮음": 3.0, "중간": 2.0, "높음": 1.0}
+
+        def _score(k: Dict) -> float:
+            total = k.get("total", 0)
+            if 500 <= total <= 5000:
+                vol = 1.0
+            elif 5000 < total <= 30000:
+                vol = 0.7
+            else:
+                vol = 0.3
+            comp = COMP_WEIGHT.get(k.get("competition", ""), 1.5)
+            kw_text = k.get("keyword", "")
+            relevance = 1.5 if prod_words and any(w in kw_text for w in prod_words) else 1.0
+            return vol * comp * relevance
+
+        scored = sorted(keywords, key=_score, reverse=True)
+        # 스코어 값도 첨부
+        best = dict(scored[0])
+        best["score"] = _score(scored[0])
+        return best
+
+    def score_keywords(self, keywords: List[Dict], product_name: str = "") -> List[Dict]:
+        """각 키워드에 score 필드를 추가해 반환"""
+        prod_words = [w for w in product_name.split() if len(w) >= 2] if product_name else []
+        COMP_WEIGHT = {"낮음": 3.0, "중간": 2.0, "높음": 1.0}
+
+        result = []
+        for k in keywords:
+            total = k.get("total", 0)
+            if 500 <= total <= 5000:
+                vol = 1.0
+            elif 5000 < total <= 30000:
+                vol = 0.7
+            else:
+                vol = 0.3
+            comp = COMP_WEIGHT.get(k.get("competition", ""), 1.5)
+            kw_text = k.get("keyword", "")
+            relevance = 1.5 if prod_words and any(w in kw_text for w in prod_words) else 1.0
+            scored = dict(k)
+            scored["score"] = round(vol * comp * relevance, 2)
+            result.append(scored)
+        return sorted(result, key=lambda x: x["score"], reverse=True)
+
     def select_sub_keywords(self, keywords: List[Dict], count: int = 8) -> List[str]:
         """검색량 상위 키워드 중 글에 섞기 적합한 것들만 선택"""
         selected = []

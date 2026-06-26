@@ -14,6 +14,7 @@ from modules.product_scraper import ProductScraper
 from modules.image_downloader import ImageDownloader
 from modules.content_generator import ContentGenerator
 from modules.competitor_researcher import CompetitorResearcher
+from modules.blog_analyzer import BlogAnalyzer
 from modules.html_formatter import to_naver_html
 from modules.templates import CATEGORIES, POST_TYPES
 
@@ -91,7 +92,11 @@ DEFAULTS = {
     "comp_sel_0": None,  # 경쟁제품1 선택값
     "comp_sel_1": None,  # 경쟁제품2 선택값
     "kw_researched": False,
+    # 키워드 스코어 & 블로그 분석
+    "kw_scored": [],       # [{keyword, total, competition, score, blog_count}, ...]
+    "kw_main_meta": {},    # 메인 키워드 메타 (total, competition, score)
 }
+
 for k, v in DEFAULTS.items():
     if k not in st.session_state:
         st.session_state[k] = v
@@ -571,30 +576,52 @@ elif st.session_state.step == 1:
 
         # 제품명 추출 성공 → 자동 분석 진행
         if product_name_from_url:
-            with st.spinner("🤖 키워드 리서치 · 제품 검색 · 경쟁사 탐색 중..."):
-                # 2. 키워드 API
+            with st.spinner("🤖 키워드 리서치 · 블로그 분석 · 제품 검색 · 경쟁사 탐색 중..."):
+                naver_cid = os.getenv("NAVER_CLIENT_ID", "")
+                naver_csec = os.getenv("NAVER_CLIENT_SECRET", "")
                 researcher = NaverKeywordResearch(naver_key, naver_secret, naver_customer)
+
+                # 2. 키워드 API + 스코어링
                 try:
                     raw_kws = researcher.get_related_keywords(product_name_from_url, top_n=30)
                     if raw_kws:
-                        prod_words = [w for w in product_name_from_url.split() if len(w) >= 2]
-                        relevant = [
-                            k for k in raw_kws
-                            if len(k["keyword"]) >= 4
-                            and any(w in k["keyword"] for w in prod_words)
-                        ]
-                        best = relevant[0] if relevant else raw_kws[0]
-                        st.session_state.keyword = best["keyword"]
-                        rest = [k for k in raw_kws if k["keyword"] != best["keyword"]]
-                        st.session_state.sub_keywords = researcher.select_sub_keywords(rest, count=8)
+                        scored_kws = researcher.score_keywords(raw_kws, product_name_from_url)
+                        best_meta = researcher.select_main_keyword(raw_kws, product_name_from_url)
+                        st.session_state.keyword = best_meta.get("keyword", product_name_from_url)
+                        st.session_state.kw_main_meta = best_meta
+
+                        rest = [k for k in scored_kws if k["keyword"] != st.session_state.keyword]
+
+                        # 3. 경쟁 블로그 분석 — 서브키워드 순위 보정
+                        sub_kw_texts = [k["keyword"] for k in rest[:15]]
+                        if naver_cid and sub_kw_texts:
+                            try:
+                                analyzer = BlogAnalyzer(naver_cid, naver_csec)
+                                freq = analyzer.analyze_keyword_frequency(
+                                    st.session_state.keyword, sub_kw_texts, top_n=10
+                                )
+                                boosted = analyzer.boost_scores(rest, freq)
+                                st.session_state.kw_scored = boosted
+                                final_sub = [k for k in boosted if k.get("total", 0) > 100]
+                                st.session_state.sub_keywords = [k["keyword"] for k in final_sub[:8]]
+                            except Exception:
+                                st.session_state.kw_scored = rest
+                                st.session_state.sub_keywords = researcher.select_sub_keywords(rest, count=8)
+                        else:
+                            st.session_state.kw_scored = rest
+                            st.session_state.sub_keywords = researcher.select_sub_keywords(rest, count=8)
                     else:
                         st.session_state.keyword = product_name_from_url
                         st.session_state.sub_keywords = []
+                        st.session_state.kw_scored = []
+                        st.session_state.kw_main_meta = {}
                 except Exception:
                     st.session_state.keyword = product_name_from_url
                     st.session_state.sub_keywords = []
+                    st.session_state.kw_scored = []
+                    st.session_state.kw_main_meta = {}
 
-                # 3. 메인 제품 검색
+                # 4. 메인 제품 검색
                 try:
                     st.session_state.search_results = scraper.search_products(product_name_from_url, top_n=8)
                     st.session_state.search_query = product_name_from_url
@@ -602,7 +629,7 @@ elif st.session_state.step == 1:
                     st.session_state.search_results = []
                     st.session_state.search_query = product_name_from_url
 
-                # 4. 경쟁사 자동 탐색 (비교형)
+                # 5. 경쟁사 자동 탐색 (비교형)
                 if st.session_state.post_type == "compare":
                     comp_queries = suggest_competitor_queries(
                         anthropic_key, st.session_state.keyword, product_name_from_url
@@ -654,20 +681,37 @@ elif st.session_state.step == 1:
         )
     # 입력값이 유효한 제품명이면 키워드 + 검색 업데이트
     if _is_valid_product_name(new_kw) and new_kw != st.session_state.keyword:
-        with st.spinner("🔍 키워드 분석 · 제품 검색 중..."):
+        naver_cid_manual = os.getenv("NAVER_CLIENT_ID", "")
+        naver_csec_manual = os.getenv("NAVER_CLIENT_SECRET", "")
+        with st.spinner("🔍 키워드 분석 · 블로그 분석 · 제품 검색 중..."):
             st.session_state.keyword = new_kw
             st.session_state.search_query = new_kw
             try:
                 researcher = NaverKeywordResearch(naver_key, naver_secret, naver_customer)
                 raw_kws = researcher.get_related_keywords(new_kw, top_n=30)
                 if raw_kws:
-                    prod_words = [w for w in new_kw.split() if len(w) >= 2]
-                    relevant = [k for k in raw_kws if len(k["keyword"]) >= 4
-                                and any(w in k["keyword"] for w in prod_words)]
-                    best = relevant[0] if relevant else raw_kws[0]
-                    st.session_state.keyword = best["keyword"]
-                    rest = [k for k in raw_kws if k["keyword"] != best["keyword"]]
-                    st.session_state.sub_keywords = researcher.select_sub_keywords(rest, count=8)
+                    scored_kws = researcher.score_keywords(raw_kws, new_kw)
+                    best_meta = researcher.select_main_keyword(raw_kws, new_kw)
+                    st.session_state.keyword = best_meta.get("keyword", new_kw)
+                    st.session_state.kw_main_meta = best_meta
+                    rest = [k for k in scored_kws if k["keyword"] != st.session_state.keyword]
+                    if naver_cid_manual and rest:
+                        try:
+                            analyzer = BlogAnalyzer(naver_cid_manual, naver_csec_manual)
+                            freq = analyzer.analyze_keyword_frequency(
+                                st.session_state.keyword, [k["keyword"] for k in rest[:15]], top_n=10
+                            )
+                            boosted = analyzer.boost_scores(rest, freq)
+                            st.session_state.kw_scored = boosted
+                            st.session_state.sub_keywords = [
+                                k["keyword"] for k in boosted if k.get("total", 0) > 100
+                            ][:8]
+                        except Exception:
+                            st.session_state.kw_scored = rest
+                            st.session_state.sub_keywords = researcher.select_sub_keywords(rest, count=8)
+                    else:
+                        st.session_state.kw_scored = rest
+                        st.session_state.sub_keywords = researcher.select_sub_keywords(rest, count=8)
             except Exception:
                 pass
             try:
@@ -808,11 +852,73 @@ elif st.session_state.step == 1:
                 if comp_results:
                     render_product_cards(comp_results, f"c{ci}", sel_key)
 
-    # ── 서브키워드 ────────────────────────────────────────
-    if st.session_state.sub_keywords:
+    # ── 키워드 스코어 대시보드 ───────────────────────────
+    _kw_meta = st.session_state.get("kw_main_meta", {})
+    _kw_scored = st.session_state.get("kw_scored", [])
+    if _kw_meta or st.session_state.sub_keywords:
         st.divider()
-        st.markdown("**🔑 글에 포함될 서브키워드**")
-        render_kw_chips(st.session_state.sub_keywords)
+        st.markdown("#### 🔑 키워드 분석 결과")
+
+        # 메인 키워드 메타 배지
+        if _kw_meta:
+            _comp = _kw_meta.get("competition", "")
+            _total = _kw_meta.get("total", 0)
+            _score = _kw_meta.get("score", 0)
+            _comp_color = {"낮음": "#2e7d32", "중간": "#e65100", "높음": "#c62828"}.get(_comp, "#555")
+            st.markdown(
+                f'<div style="background:#f0faf4;border:1px solid #03C75A;border-radius:8px;'
+                f'padding:10px 14px;margin-bottom:8px;">'
+                f'<span style="font-size:0.8rem;color:#555;">🎯 메인 키워드</span><br>'
+                f'<span style="font-size:1.1rem;font-weight:800;color:#03C75A;">'
+                f'{st.session_state.keyword}</span>'
+                + (f'&nbsp;&nbsp;<span style="font-size:0.78rem;color:#555;">검색량 <b>{_total:,}회/월</b></span>' if _total else '')
+                + (f'&nbsp;&nbsp;<span style="font-size:0.78rem;color:{_comp_color};font-weight:700;">경쟁도 {_comp}</span>' if _comp else '')
+                + (f'&nbsp;&nbsp;<span style="font-size:0.78rem;color:#888;">점수 {_score:.1f}</span>' if _score else '')
+                + '</div>',
+                unsafe_allow_html=True,
+            )
+
+        # 서브키워드 스코어 테이블
+        if _kw_scored:
+            top_sub = [k for k in _kw_scored if k.get("total", 0) > 100][:12]
+            if top_sub:
+                rows_html = ""
+                for k in top_sub:
+                    kw_text = k.get("keyword", "")
+                    total = k.get("total", 0)
+                    comp = k.get("competition", "")
+                    sc = k.get("score", 0)
+                    bc = k.get("blog_count", 0)
+                    comp_color = {"낮음": "#2e7d32", "중간": "#e65100", "높음": "#c62828"}.get(comp, "#555")
+                    is_selected = kw_text in st.session_state.sub_keywords
+                    bg = "#f0faf4" if is_selected else "#fff"
+                    star = "⭐" * min(bc, 5) if bc else ""
+                    rows_html += (
+                        f'<tr style="background:{bg};">'
+                        f'<td style="padding:5px 8px;font-size:0.82rem;font-weight:{"700" if is_selected else "400"};">'
+                        f'{"✅ " if is_selected else ""}{kw_text}</td>'
+                        f'<td style="padding:5px 8px;font-size:0.78rem;color:#555;text-align:right;">{total:,}</td>'
+                        f'<td style="padding:5px 8px;font-size:0.78rem;color:{comp_color};text-align:center;">{comp}</td>'
+                        f'<td style="padding:5px 8px;font-size:0.78rem;color:#888;text-align:center;">{star or "-"}</td>'
+                        f'<td style="padding:5px 8px;font-size:0.82rem;font-weight:700;color:#03C75A;text-align:right;">{sc:.1f}</td>'
+                        f'</tr>'
+                    )
+                st.markdown(
+                    '<table style="width:100%;border-collapse:collapse;border:1px solid #e0e0e0;'
+                    'border-radius:8px;overflow:hidden;">'
+                    '<thead><tr style="background:#f5f5f5;">'
+                    '<th style="padding:6px 8px;font-size:0.75rem;text-align:left;">키워드</th>'
+                    '<th style="padding:6px 8px;font-size:0.75rem;text-align:right;">검색량/월</th>'
+                    '<th style="padding:6px 8px;font-size:0.75rem;text-align:center;">경쟁도</th>'
+                    '<th style="padding:6px 8px;font-size:0.75rem;text-align:center;">블로그★</th>'
+                    '<th style="padding:6px 8px;font-size:0.75rem;text-align:right;">점수</th>'
+                    '</tr></thead>'
+                    f'<tbody>{rows_html}</tbody></table>',
+                    unsafe_allow_html=True,
+                )
+                st.caption("✅ = 글에 포함될 서브키워드 | 블로그★ = 상위 블로그 출현 횟수 (최대5)")
+        elif st.session_state.sub_keywords:
+            render_kw_chips(st.session_state.sub_keywords)
 
     # ── 하단 버튼 ─────────────────────────────────────────
     st.divider()
