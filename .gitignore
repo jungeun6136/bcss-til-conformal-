@@ -1,7 +1,6 @@
 
 # Preprocessed data (generated)
 preprocessed_data/
-preprocessed_triplet/
 
 # Cache and temp
 __pycache__/
