@@ -222,13 +222,24 @@ def preprocess_split(pairs, output_dir: Path, split_name: str,
     for img_path, mask_path in pairs:
         try:
             normalized = preprocess_image(img_path, pixel_norm_method)
+            mask = np.array(Image.open(mask_path))
         except Exception as e:
-            print(f"  ✗ {img_path.name} 처리 실패: {e}")
+            print(f"  ✗ {img_path.name}: 파일 로드/처리 실패 ({e})")
             n_slides_failed += 1
             continue
 
-        mask = np.array(Image.open(mask_path))
+        # 이미지-마스크 해상도 불일치 방어 (파일 손상 시 조용히 잘못된 패치가 만들어지는 것 방지)
+        if normalized.shape[:2] != mask.shape[:2]:
+            print(f"  ✗ {img_path.name}: 이미지 {normalized.shape[:2]} vs 마스크 {mask.shape[:2]} 크기 불일치, 건너뜀")
+            n_slides_failed += 1
+            continue
+
         consolidated_mask = consolidate_mask(mask)
+
+        if consolidated_mask.max() == 0:
+            print(f"  ⚠ {img_path.name}: 마스크가 전부 배경/제외 클래스임, 건너뜀")
+            n_slides_failed += 1
+            continue
 
         patches = extract_patches(normalized, consolidated_mask, patch_size=patch_size)
 
