@@ -160,7 +160,44 @@ def split_by_case(pairs, train_ratio=0.7, val_ratio=0.15, seed=42):
 
 
 # ============================================================================
-# Step 4: 정규화 (염색 정규화 + 픽셀 정규화)
+# Step 4: 패치 분할
+# ============================================================================
+# 실제 데이터 확인 결과 이미지 크기가 슬라이드마다 제각각임
+# (예: 3394x2467, 4838x3426, 3794x2919) -> 고정 크기 패치로 잘라야 배치 학습 가능
+
+DEFAULT_PATCH_SIZE = 512
+MIN_TISSUE_RATIO = 0.1  # 패치 내 배경(ignore=0)이 아닌 픽셀 비율이 이 이하면 제외
+
+
+def extract_patches(image: np.ndarray, mask: np.ndarray, patch_size: int = DEFAULT_PATCH_SIZE,
+                     stride: int = None, min_tissue_ratio: float = MIN_TISSUE_RATIO):
+    """큰 이미지/마스크를 겹치지 않는 고정 크기 패치로 분할.
+    조직 비율이 너무 낮은(배경 위주) 패치는 제외.
+
+    Returns: [(image_patch, mask_patch), ...]
+    """
+    if stride is None:
+        stride = patch_size  # 기본은 겹치지 않게
+
+    h, w = mask.shape[:2]
+    if h < patch_size or w < patch_size:
+        print(f"  ⚠ 이미지가 패치 크기({patch_size})보다 작음 (h={h}, w={w}) -> 건너뜀")
+        return []
+
+    patches = []
+    for y in range(0, h - patch_size + 1, stride):
+        for x in range(0, w - patch_size + 1, stride):
+            mask_patch = mask[y:y + patch_size, x:x + patch_size]
+            tissue_ratio = (mask_patch != 0).mean()
+            if tissue_ratio < min_tissue_ratio:
+                continue
+            image_patch = image[y:y + patch_size, x:x + patch_size]
+            patches.append((image_patch, mask_patch))
+    return patches
+
+
+# ============================================================================
+# Step 5: 정규화 (염색 정규화 + 픽셀 정규화)
 # ============================================================================
 
 def preprocess_image(image_path: Path, pixel_norm_method: str = "imagenet") -> np.ndarray:
@@ -175,30 +212,36 @@ def preprocess_image(image_path: Path, pixel_norm_method: str = "imagenet") -> n
     return normalize_pixels(stain_normalized, method=pixel_norm_method)
 
 
-def preprocess_split(pairs, output_dir: Path, split_name: str, pixel_norm_method: str = "imagenet"):
-    """분할 하나(train/val/test)에 대해 정규화 적용 후 저장"""
+def preprocess_split(pairs, output_dir: Path, split_name: str,
+                      patch_size: int = DEFAULT_PATCH_SIZE, pixel_norm_method: str = "imagenet"):
+    """분할 하나(train/val/test)에 대해 정규화 + 패치 분할 적용 후 저장"""
     split_dir = output_dir / split_name
     split_dir.mkdir(parents=True, exist_ok=True)
 
-    n_ok, n_failed = 0, 0
+    n_slides_ok, n_slides_failed, n_patches = 0, 0, 0
     for img_path, mask_path in pairs:
         try:
             normalized = preprocess_image(img_path, pixel_norm_method)
         except Exception as e:
             print(f"  ✗ {img_path.name} 처리 실패: {e}")
-            n_failed += 1
+            n_slides_failed += 1
             continue
 
         mask = np.array(Image.open(mask_path))
         consolidated_mask = consolidate_mask(mask)
 
-        stem = img_path.stem
-        np.save(split_dir / f"{stem}_image.npy", normalized.astype(np.float32))
-        np.save(split_dir / f"{stem}_mask.npy", consolidated_mask.astype(np.uint8))
-        n_ok += 1
+        patches = extract_patches(normalized, consolidated_mask, patch_size=patch_size)
 
-    print(f"  [{split_name}] 완료: {n_ok}개 성공, {n_failed}개 실패")
-    return n_ok, n_failed
+        stem = img_path.stem
+        for i, (img_patch, mask_patch) in enumerate(patches):
+            np.save(split_dir / f"{stem}_p{i:04d}_image.npy", img_patch.astype(np.float32))
+            np.save(split_dir / f"{stem}_p{i:04d}_mask.npy", mask_patch.astype(np.uint8))
+
+        n_patches += len(patches)
+        n_slides_ok += 1
+
+    print(f"  [{split_name}] 완료: 슬라이드 {n_slides_ok}개 성공 / {n_slides_failed}개 실패, 패치 {n_patches}개 생성")
+    return n_slides_ok, n_slides_failed, n_patches
 
 
 # ============================================================================
@@ -239,11 +282,11 @@ def main():
         )
     print(f"\n✓ 분할 정보 저장: {output_dir / 'split_info.json'}")
 
-    print("\n[Step 4] 염색 정규화 + 픽셀 정규화 적용 및 저장")
+    print(f"\n[Step 4-5] 패치 분할({DEFAULT_PATCH_SIZE}x{DEFAULT_PATCH_SIZE}) + 염색/픽셀 정규화 적용 및 저장")
     for split_name in ["train", "val", "test"]:
         preprocess_split(split[split_name], output_dir, split_name)
 
-    print("\n다음 단계: 패치 분할 크기 확정 (실제 이미지 해상도 확인 후)")
+    print("\n전처리 파이프라인 완료")
 
 
 if __name__ == "__main__":
