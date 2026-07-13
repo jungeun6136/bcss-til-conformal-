@@ -86,12 +86,30 @@ def filter_zero_variance_features(df):
     std_devs = df.std()
     return df.loc[:, std_devs > 0]
 
+def handle_missing_values(df, method='drop_columns'):
+    """결측치 처리 (열 단위 제거 또는 행 단위 제거)"""
+    if method == 'drop_columns':
+        # 결측치가 있는 열 제거
+        return df.dropna(axis=1)
+    elif method == 'drop_rows':
+        # 결측치가 있는 행 제거
+        return df.dropna(axis=0)
+    elif method == 'mean_impute':
+        # 평균값으로 결측치 대체
+        return df.fillna(df.mean())
+    return df
+
 cn_filtered = filter_zero_variance_features(cn_filtered)
+cn_filtered = handle_missing_values(cn_filtered, method='drop_columns')
+
 expr_filtered = filter_zero_variance_features(expr_filtered)
+expr_filtered = handle_missing_values(expr_filtered, method='drop_columns')
+
 meth_filtered = filter_zero_variance_features(meth_filtered)
+meth_filtered = handle_missing_values(meth_filtered, method='drop_columns')
 
 print(f"✓ 필터링 후:")
-print(f"  - CN: {cn_filtered.shape}")
+print(f"  - CN: {cn_filtered.shape} (결측치 있는 열 제거)")
 print(f"  - Expr: {expr_filtered.shape}")
 print(f"  - Meth: {meth_filtered.shape}")
 
