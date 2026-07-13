@@ -15,6 +15,8 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+from stain_normalization import macenko_normalize, normalize_pixels
+
 # ============================================================================
 # 클래스 매핑 (meta/gtruth_codes.tsv 원본 확인 결과 그대로 반영)
 # ============================================================================
@@ -158,6 +160,48 @@ def split_by_case(pairs, train_ratio=0.7, val_ratio=0.15, seed=42):
 
 
 # ============================================================================
+# Step 4: 정규화 (염색 정규화 + 픽셀 정규화)
+# ============================================================================
+
+def preprocess_image(image_path: Path, pixel_norm_method: str = "imagenet") -> np.ndarray:
+    """이미지 1장을 읽어서 염색 정규화 -> 픽셀 정규화까지 적용한 배열 반환"""
+    image = np.array(Image.open(image_path).convert("RGB"))
+    try:
+        stain_normalized = macenko_normalize(image)
+    except ValueError as e:
+        # 배경만 있거나 조직 픽셀이 너무 적은 이미지는 염색 정규화 건너뜀
+        print(f"  ⚠ {image_path.name}: 염색 정규화 실패({e}), 원본 유지")
+        stain_normalized = image
+    return normalize_pixels(stain_normalized, method=pixel_norm_method)
+
+
+def preprocess_split(pairs, output_dir: Path, split_name: str, pixel_norm_method: str = "imagenet"):
+    """분할 하나(train/val/test)에 대해 정규화 적용 후 저장"""
+    split_dir = output_dir / split_name
+    split_dir.mkdir(parents=True, exist_ok=True)
+
+    n_ok, n_failed = 0, 0
+    for img_path, mask_path in pairs:
+        try:
+            normalized = preprocess_image(img_path, pixel_norm_method)
+        except Exception as e:
+            print(f"  ✗ {img_path.name} 처리 실패: {e}")
+            n_failed += 1
+            continue
+
+        mask = np.array(Image.open(mask_path))
+        consolidated_mask = consolidate_mask(mask)
+
+        stem = img_path.stem
+        np.save(split_dir / f"{stem}_image.npy", normalized.astype(np.float32))
+        np.save(split_dir / f"{stem}_mask.npy", consolidated_mask.astype(np.uint8))
+        n_ok += 1
+
+    print(f"  [{split_name}] 완료: {n_ok}개 성공, {n_failed}개 실패")
+    return n_ok, n_failed
+
+
+# ============================================================================
 # 메인
 # ============================================================================
 
@@ -194,7 +238,12 @@ def main():
             f, indent=2
         )
     print(f"\n✓ 분할 정보 저장: {output_dir / 'split_info.json'}")
-    print("\n다음 단계: 패치 분할 / 염색 정규화 / 정규화된 텐서 저장 (데이터 실제 확인 후 이어서 작성)")
+
+    print("\n[Step 4] 염색 정규화 + 픽셀 정규화 적용 및 저장")
+    for split_name in ["train", "val", "test"]:
+        preprocess_split(split[split_name], output_dir, split_name)
+
+    print("\n다음 단계: 패치 분할 크기 확정 (실제 이미지 해상도 확인 후)")
 
 
 if __name__ == "__main__":
