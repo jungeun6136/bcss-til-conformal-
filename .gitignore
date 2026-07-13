@@ -3,6 +3,10 @@
 preprocessed_data/
 preprocessed_triplet/
 
+# Pathomics project: raw/processed image data (large, not for git)
+pathomics_project/data_raw/
+pathomics_project/preprocessed/
+
 # Cache and temp
 __pycache__/
 *.pyc
