@@ -23,24 +23,60 @@ pathomics_project/
 ## 1단계: BCSS 이미지 데이터 전처리
 
 ### 1-1. 원본 데이터 다운로드
-- [ ] GitHub(`PathologyDataScience/BCSS`) 안내 따라 이미지 + 마스크 다운로드
-- [ ] `data_raw/bcss/images/`, `data_raw/bcss/masks/`에 배치
+
+**다운로드 방법** (실제 README 확인 완료):
+```bash
+git clone https://github.com/CancerDataScience/CrowdsourcingDataset-Amgadetal2019
+cd CrowdsourcingDataset-Amgadetal2019
+pip install girder_client pillow numpy scikit-image imageio
+python download_crowdsource_dataset.py
+```
+(또는 README에 안내된 Google Drive 단일 링크로 일괄 다운로드 가능)
+
+**다운로드 후 생성되는 구조**:
+```
+annotations/   ← WSI 해상도 JSON 주석
+masks/         ← 학습용 정답 마스크 (PNG)
+images/        ← 마스크와 짝을 이루는 RGB 이미지 (PNG)
+```
+
+- [ ] 위 스크립트 실행하여 다운로드
+- [ ] `pathomics_project/data_raw/bcss/`로 이동 배치
 - [ ] 이미지-마스크 파일명 매칭 확인 (짝이 안 맞는 파일 있는지 체크)
 
-### 1-2. 클래스 통합 (16개 → 5개 대분류)
-BCSS 원본은 16개 세부 클래스(Mucoid material, Blood, Necrosis, Lymphocytic 등)로 라벨링되어 있음.
-그대로 쓰면 클래스 불균형이 심하고 세분화가 과도하므로, 임상적으로 의미있는 5개로 통합.
+### 1-2. 클래스 통합 (22개 원본 코드 → 5개 대분류 + 배경)
 
-| 대분류 | 포함되는 원본 클래스 (예시) |
-|--------|---------------------------|
-| Tumor | Tumor, Dcis, Angioinvasion |
-| Stroma | Stroma, Normal acinus or duct |
-| Immune | Lymphocytic, Plasma cells, Other immune, Lymphatics |
-| Necrosis | Necrosis or debris |
-| Other | Fat, Blood, Blood vessel, Mucoid material, Glandular secretions, Metaplasia NOS |
+원본 클래스 정의는 `meta/gtruth_codes.tsv`에서 직접 확인함 (아래는 실제 파일 내용, 추측 아님):
 
-- [ ] 정확한 원본 클래스 목록 확보 후 매핑 테이블 확정 (다운로드 후 라벨 값 직접 확인 필요)
-- [ ] 매핑 함수 구현 (마스크 픽셀값 재라벨링)
+| GT_code | label (원본) | 통합 대분류 |
+|:---:|---|---|
+| 0 | outside_roi | **배경/제외** (학습 시 weight=0) |
+| 1 | tumor | **Tumor** |
+| 2 | stroma | **Stroma** |
+| 3 | lymphocytic_infiltrate | **Immune** |
+| 4 | necrosis_or_debris | **Necrosis** |
+| 5 | glandular_secretions | Other |
+| 6 | blood | Other |
+| 7 | exclude | **배경/제외** |
+| 8 | metaplasia_NOS | Other |
+| 9 | fat | Other |
+| 10 | plasma_cells | **Immune** |
+| 11 | other_immune_infiltrate | **Immune** |
+| 12 | mucoid_material | Other |
+| 13 | normal_acinus_or_duct | **Stroma** |
+| 14 | lymphatics | **Immune** |
+| 15 | undetermined | **배경/제외** |
+| 16 | nerve | Other |
+| 17 | skin_adnexa | Other |
+| 18 | blood_vessel | Other |
+| 19 | angioinvasion | **Tumor** |
+| 20 | dcis | **Tumor** |
+| 21 | other | Other |
+
+→ 최종 5개 클래스: **Tumor / Stroma / Immune / Necrosis / Other** (+ 배경은 학습 시 loss에서 제외)
+
+- [x] 매핑 테이블 확정 (원본 소스 확인 완료)
+- [ ] 매핑 함수 구현 (마스크 픽셀값 재라벨링) — `preprocess_bcss.py`에 작성함
 
 ### 1-3. 이미지 규격 통일
 - [ ] 이미지 크기 확인 (원본이 제각각인지, 이미 1024×1024인지)
